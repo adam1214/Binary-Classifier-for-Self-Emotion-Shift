@@ -6,6 +6,7 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.svm import SVC
 import pandas as pd
 import pdb
+from sklearn.metrics import confusion_matrix
 '''
 import numpy as np
 from sklearn.pipeline import make_pipeline
@@ -123,29 +124,27 @@ def generate_interaction_data(dialog_dict, seq_dict, emo_dict, val_set, mode='co
 
 def gen_train_test_pair(data_frame, X, Y):
     for index, row in data_frame.iterrows():
-            X.append([])
-            #center_utt_name = row[0]
-            #target_utt_name = row[1]
-            #oppo_utt_name = row[2]
-            
-            #center_utt_feat = feat_pooled[center_utt_name]
-            #target_utt_feat = feat_pooled[target_utt_name]
-            #oppo_utt_feat = feat_pooled[oppo_utt_name]
-            
-            target_utt_emo = emo_num_dict[row[4]]
-            oppo_utt_emo = emo_num_dict[row[5]]
-            self_emo_shift = row[-1]
-            
-            X[-1].append(target_utt_emo)
-            X[-1].append(oppo_utt_emo)
-            
-            Y.append(self_emo_shift)
+        X.append([])
+        center_utt_name = row[0]
+        target_utt_name = row[1]
+        oppo_utt_name = row[2]
+        
+        center_utt_feat = feat_pooled[center_utt_name]
+        target_utt_feat = feat_pooled[target_utt_name]
+        oppo_utt_feat = feat_pooled[oppo_utt_name]
+        
+        #target_utt_emo = emo_num_dict[row[4]]
+        #oppo_utt_emo = emo_num_dict[row[5]]
+        self_emo_shift = row[-1]
+        
+        X[-1].append(np.concatenate((center_utt_feat.flatten(), target_utt_feat.flatten(), oppo_utt_feat.flatten())))
+        Y.append(self_emo_shift)
 
 if __name__ == "__main__":
     # dimension of each utterance: (n, 45)
     # n:number of time frames in the utterance
     emo_num_dict = {'ang': 0, 'hap': 1, 'neu':2, 'sad': 3, 'sur': 4, 'fru': 5, 'xxx': 6, 'oth': 7, 'fea': 8, 'dis': 9, 'pad': 10}
-    feat_pooled = joblib.load('./data/feat_pooled.pkl')
+    feat_pooled = joblib.load('./data/feat_preprocessing.pkl')
     
     # label
     emo_all_dict = joblib.load('./data/emo_all.pkl')
@@ -168,14 +167,17 @@ if __name__ == "__main__":
         gen_train_test_pair(emo_train, train_X, train_Y)
         
         train_X = np.array(train_X)
-        train_Y = np.array(train_Y)
-        clf = make_pipeline(SVC(gamma='auto'))
+        train_X = train_X.squeeze(1)
+        clf = make_pipeline(StandardScaler(), SVC(kernel='rbf', random_state=100))
         clf.fit(train_X, train_Y)
         
         # testing
         gen_train_test_pair(emo_test, test_X, test_Y)
+        test_X = np.array(test_X)
+        test_X = test_X.squeeze(1)
         p = clf.predict(test_X)
         
         pred += p.tolist()
         gt += test_Y
     print('ACC:', round(accuracy_score(gt, pred)*100, 2), '%')
+    print(confusion_matrix(gt, pred))
