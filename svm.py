@@ -1,12 +1,15 @@
 import joblib
-from sklearn.metrics import accuracy_score
 import numpy as np
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 from sklearn.svm import SVC
 import pandas as pd
 import pdb
-from sklearn.metrics import confusion_matrix
+from sklearn.metrics import confusion_matrix, recall_score, accuracy_score, precision_score
+from collections import Counter
+from imblearn.over_sampling import SMOTE, RandomOverSampler 
+from imblearn.under_sampling import ClusterCentroids
+from imblearn.combine import SMOTETomek, SMOTEENN
 '''
 import numpy as np
 from sklearn.pipeline import make_pipeline
@@ -139,6 +142,22 @@ def gen_train_test_pair(data_frame, X, Y):
         
         X[-1].append(np.concatenate((center_utt_feat.flatten(), target_utt_feat.flatten(), oppo_utt_feat.flatten())))
         Y.append(self_emo_shift)
+        
+def upsampling(X, Y):
+    #counter = Counter(Y)
+    #print(counter)
+    
+    # transform the dataset
+    #oversample = SMOTE(random_state=100, n_jobs=-1, sampling_strategy='auto', k_neighbors=5)
+    oversample = RandomOverSampler(random_state=100)
+    #oversample = ClusterCentroids(random_state=100, n_jobs=-1)
+    #oversample = SMOTETomek(random_state=100, n_jobs=-1, sampling_strategy='auto')
+    X_upsample, Y_upsample = oversample.fit_resample(np.array(X).squeeze(1), Y)
+    
+    #counter = Counter(Y_upsample)
+    #print(counter)
+
+    return X_upsample, Y_upsample
 
 if __name__ == "__main__":
     # dimension of each utterance: (n, 45)
@@ -165,11 +184,13 @@ if __name__ == "__main__":
         emo_test = pd.read_csv('./data/emo_test.csv')
         
         gen_train_test_pair(emo_train, train_X, train_Y)
+        X_upsample, Y_upsample = upsampling(train_X, train_Y)
         
-        train_X = np.array(train_X)
-        train_X = train_X.squeeze(1)
-        clf = make_pipeline(StandardScaler(), SVC(kernel='rbf', random_state=100))
-        clf.fit(train_X, train_Y)
+        #train_X = np.array(train_X)
+        #train_X = train_X.squeeze(1)
+        
+        clf = make_pipeline(SVC(kernel='rbf', random_state=100))
+        clf.fit(X_upsample, Y_upsample)
         
         # testing
         gen_train_test_pair(emo_test, test_X, test_Y)
@@ -179,5 +200,8 @@ if __name__ == "__main__":
         
         pred += p.tolist()
         gt += test_Y
-    print('ACC:', round(accuracy_score(gt, pred)*100, 2), '%')
+
+    print('UAR:', round(recall_score(gt, pred, average='macro')*100, 2), '%')
+    #print('ACC:', round(accuracy_score(gt, pred)*100, 2), '%')
+    print('precision (predcit label 1):', round(precision_score(gt, pred)*100, 2), '%')
     print(confusion_matrix(gt, pred))
