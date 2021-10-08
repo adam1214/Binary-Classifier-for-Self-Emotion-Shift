@@ -13,6 +13,8 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import Dataset, DataLoader
+import warnings
+warnings.filterwarnings('ignore')  # "error", "ignore", "always", "default", "module" or "once"
 
 class trainData(Dataset):
     
@@ -55,19 +57,23 @@ class binaryClassification(nn.Module):
         super(binaryClassification, self).__init__()
         # Number of input features is 270.
         self.layer_1 = nn.Linear(270, 64) 
-        self.layer_2 = nn.Linear(64, 64)
-        self.layer_out = nn.Linear(64, 1) 
+        self.layer_2 = nn.Linear(64, 32)
+        #self.layer_3 = nn.Linear(32, 16)
+        self.layer_out = nn.Linear(32, 1) 
         
         self.relu = nn.ReLU()
         self.dropout = nn.Dropout(p=0.1)
-        #self.batchnorm1 = nn.BatchNorm1d(64)
-        #self.batchnorm2 = nn.BatchNorm1d(64)
+        self.batchnorm1 = nn.BatchNorm1d(64)
+        self.batchnorm2 = nn.BatchNorm1d(32)
+        #self.batchnorm3 = nn.BatchNorm1d(16)
         
     def forward(self, inputs):
         x = self.relu(self.layer_1(inputs))
-        #x = self.batchnorm1(x)
+        x = self.batchnorm1(x)
         x = self.relu(self.layer_2(x))
-        #x = self.batchnorm2(x)
+        x = self.batchnorm2(x)
+        #x = self.relu(self.layer_3(x))
+        #x = self.batchnorm3(x)
         x = self.dropout(x)
         x = self.layer_out(x)
         
@@ -226,14 +232,17 @@ def model_pred_and_gt(y_pred_list, y_gt_list, loader, model):
             y_pred = model(X_batch)
             y_pred = torch.sigmoid(y_pred)
             y_pred_tag = torch.round(y_pred).long()
-            y_pred_list += y_pred_tag.cpu().numpy().squeeze().tolist()
-            
-            y_gt_list += y_batch.tolist()
+            try:
+                y_pred_list += y_pred_tag.cpu().squeeze().tolist()
+                y_gt_list += y_batch.tolist()
+            except:
+                y_pred_list.append(y_pred_tag.cpu().squeeze().tolist())
+                y_gt_list.append(y_batch.tolist())
 
 if __name__ == "__main__":
     BATCH_SIZE = 16
-    LEARNING_RATE = 0.00001
-    WEIGHT_DECAY = 0.001
+    LEARNING_RATE = 0.0001
+    WEIGHT_DECAY = 0.01
     EPOCH = 100
     # dimension of each utterance: (n, 45)
     # n:number of time frames in the utterance
@@ -291,7 +300,7 @@ if __name__ == "__main__":
         test_loader = DataLoader(dataset=test_data, batch_size=BATCH_SIZE)
         
         counter = Counter(train_Y)
-        criterion = nn.BCEWithLogitsLoss(pos_weight=torch.tensor(counter[0]/counter[1]).to(device))
+        criterion = nn.BCEWithLogitsLoss(pos_weight=torch.tensor(counter[0]*0.9/counter[1]).to(device))
         
         # training
         val_uar_list = []
@@ -329,6 +338,7 @@ if __name__ == "__main__":
                 checkpoint = {'epoch': e, 'model_state_dict': model.state_dict(), 'optimizer_state_dict': optimizer.state_dict(), 'loss': loss}
                 torch.save(checkpoint, './model/mlp_pytorch_best_model.pth')
             print(f'Epoch {e+0:03}: | Loss: {epoch_loss/len(train_loader):.5f} | train_uar: {epoch_uar/len(train_loader):.3f} | val_uar: {val_uar:.2f}')
+            print(confusion_matrix(y_gt_list_validation, y_pred_list_validation))
         print('The best epoch:', best_epoch)
 
         # testing
