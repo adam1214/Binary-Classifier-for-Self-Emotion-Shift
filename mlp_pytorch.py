@@ -26,6 +26,18 @@ class trainData(Dataset):
     def __len__ (self):
         return len(self.X_data)
     
+class valData(Dataset):
+    
+    def __init__(self, X_data, y_data):
+        self.X_data = X_data
+        self.y_data = y_data
+        
+    def __getitem__(self, index):
+        return self.X_data[index], self.y_data[index].long()
+        
+    def __len__ (self):
+        return len(self.X_data)
+    
 class testData(Dataset):
     
     def __init__(self, X_data, y_data):
@@ -115,7 +127,7 @@ def generate_interaction_sample(index_words, seq_dict, emo_dict):
 
     return center_, target_, opposite_, center_label, target_label, opposite_label, target_dist, opposite_dist, self_emo_shift
 
-def generate_interaction_data(dialog_dict, seq_dict, emo_dict, val_set, mode='context'):
+def generate_interaction_data(dialog_dict, seq_dict, emo_dict, test_set, val_set, mode='context'):
     """Generate training/testing data (emo_train.csv & emo_test.csv) under specific modes.
     
     Args:
@@ -125,13 +137,14 @@ def generate_interaction_data(dialog_dict, seq_dict, emo_dict, val_set, mode='co
     """
     center_train, target_train, opposite_train, center_label_train, target_label_train, opposite_label_train, target_dist_train, opposite_dist_train, self_emo_shift_train = [], [], [], [], [], [], [], [], []
     center_val, target_val, opposite_val, center_label_val, target_label_val, opposite_label_val, target_dist_val, opposite_dist_val, self_emo_shift_val = [], [], [], [], [], [], [], [], []
+    center_test, target_test, opposite_test, center_label_test, target_label_test, opposite_label_test, target_dist_test, opposite_dist_test, self_emo_shift_test = [], [], [], [], [], [], [], [], []
     if mode=='context':
         generator = generate_interaction_sample
 
     for k in dialog_dict.keys():
         dialog_order = dialog_dict[k]
         # training set
-        if val_set not in k:
+        if test_set not in k and val_set not in k:
             c, t, o, cl, tl, ol, td, od, ses = generator(dialog_order, seq_dict, emo_dict)
             center_train += c
             target_train += t
@@ -142,8 +155,8 @@ def generate_interaction_data(dialog_dict, seq_dict, emo_dict, val_set, mode='co
             target_dist_train += td
             opposite_dist_train += od
             self_emo_shift_train += ses
-        # validation set
-        else:
+        # val set
+        elif val_set in k:
             c, t, o, cl, tl, ol, td, od, ses = generator(dialog_order, seq_dict, emo_dict)
             center_val += c
             target_val += t
@@ -154,21 +167,39 @@ def generate_interaction_data(dialog_dict, seq_dict, emo_dict, val_set, mode='co
             target_dist_val += td
             opposite_dist_val += od
             self_emo_shift_val += ses
+        # test set
+        else:
+            c, t, o, cl, tl, ol, td, od, ses = generator(dialog_order, seq_dict, emo_dict)
+            center_test += c
+            target_test += t
+            opposite_test += o
+            center_label_test += cl
+            target_label_test += tl
+            opposite_label_test += ol
+            target_dist_test += td
+            opposite_dist_test += od
+            self_emo_shift_test += ses
 
     # save dialog pairs to train.csv and test.csv
-    train_filename= './data/emo_train.csv'
-    val_filename= './data/emo_test.csv'
+    train_filename = './data/emo_train.csv'
+    val_filename = './data/emo_val.csv'
+    test_filename = './data/emo_test.csv'
     column_order = ['center', 'target', 'opposite', 'center_label', 'target_label', 'opposite_label', 'target_dist', 'opposite_dist', 'self_emo_shift']
     # train
     d = {'center': center_train, 'target': target_train, 'opposite': opposite_train, 'center_label': center_label_train, 
          'target_label': target_label_train, 'opposite_label': opposite_label_train, 'target_dist': target_dist_train, 'opposite_dist': opposite_dist_train, 'self_emo_shift': self_emo_shift_train}
     df = pd.DataFrame(data=d)
     df[column_order].to_csv(train_filename, sep=',', index = False)
-    # validation
+    # val
     d = {'center': center_val, 'target': target_val, 'opposite': opposite_val, 'center_label': center_label_val, 
          'target_label': target_label_val, 'opposite_label': opposite_label_val, 'target_dist': target_dist_val, 'opposite_dist': opposite_dist_val, 'self_emo_shift': self_emo_shift_val}
     df = pd.DataFrame(data=d)
     df[column_order].to_csv(val_filename, sep=',', index = False)
+    # test
+    d = {'center': center_test, 'target': target_test, 'opposite': opposite_test, 'center_label': center_label_test, 
+         'target_label': target_label_test, 'opposite_label': opposite_label_test, 'target_dist': target_dist_test, 'opposite_dist': opposite_dist_test, 'self_emo_shift': self_emo_shift_test}
+    df = pd.DataFrame(data=d)
+    df[column_order].to_csv(test_filename, sep=',', index = False)
 
 def gen_train_val_test(data_frame, X, Y):
     for index, row in data_frame.iterrows():
@@ -188,8 +219,22 @@ def gen_train_val_test(data_frame, X, Y):
         X[-1].append(np.concatenate((center_utt_feat.flatten(), target_utt_feat.flatten(), oppo_utt_feat.flatten())))
         Y.append(self_emo_shift)
 
+def model_pred_and_gt(y_pred_list, y_gt_list, loader, model):
+    with torch.no_grad():
+        for X_batch, y_batch in loader:
+            X_batch, y_batch = X_batch.to(device), y_batch.to(device)
+            y_pred = model(X_batch)
+            y_pred = torch.sigmoid(y_pred)
+            y_pred_tag = torch.round(y_pred).long()
+            y_pred_list += y_pred_tag.cpu().numpy().squeeze().tolist()
+            
+            y_gt_list += y_batch.tolist()
 
 if __name__ == "__main__":
+    BATCH_SIZE = 16
+    LEARNING_RATE = 0.00001
+    WEIGHT_DECAY = 0.001
+    EPOCH = 100
     # dimension of each utterance: (n, 45)
     # n:number of time frames in the utterance
     torch.manual_seed(100)
@@ -203,50 +248,57 @@ if __name__ == "__main__":
     # dialog order
     dialog_dict = joblib.load('./data/dialog.pkl')
     
-    val = ['Ses01', 'Ses02', 'Ses03', 'Ses04', 'Ses05']
+    test = ['Ses01', 'Ses02', 'Ses03', 'Ses04', 'Ses05']
+    val = ['Ses02', 'Ses03', 'Ses01', 'Ses05', 'Ses04']
     pred = []
     gt = []
     
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     print(device)
     
-    for val_ in val:
-        print("################{}################".format(val_))
+    for test_, val_ in zip(test, val):
+        print("################{}################".format(test_))
         
         model = binaryClassification()
         model.to(device)
-        optimizer = optim.Adam(model.parameters(), lr=0.0001)
+        optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE, weight_decay=WEIGHT_DECAY)
         
         
-        # generate training data/val data
-        generate_interaction_data(dialog_dict, feat_pooled, emo_all_dict, val_set=val_)
+        # generate training data/val data/ test data
+        generate_interaction_data(dialog_dict, feat_pooled, emo_all_dict, test_set=test_, val_set=val_)
         emo_train = pd.read_csv('./data/emo_train.csv')
+        emo_val = pd.read_csv('./data/emo_val.csv')
         emo_test = pd.read_csv('./data/emo_test.csv')
         
-        train_X, train_Y, test_X, test_Y = [], [], [], []
+        train_X, train_Y, val_X, val_Y, test_X, test_Y = [], [], [], [], [], []
         
         gen_train_val_test(emo_train, train_X, train_Y)
         train_X = np.array(train_X)
         train_X = train_X.squeeze(1)
         train_data = trainData(torch.FloatTensor(train_X), torch.FloatTensor(train_Y))
-        train_loader = DataLoader(dataset=train_data, batch_size=16, shuffle=True)
+        train_loader = DataLoader(dataset=train_data, batch_size=BATCH_SIZE, shuffle=True)
+        
+        gen_train_val_test(emo_val, val_X, val_Y)
+        val_X = np.array(val_X)
+        val_X = val_X.squeeze(1)
+        val_data = valData(torch.FloatTensor(val_X), torch.FloatTensor(val_Y))
+        val_loader = DataLoader(dataset=val_data, batch_size=BATCH_SIZE)
         
         gen_train_val_test(emo_test, test_X, test_Y)
         test_X = np.array(test_X)
         test_X = test_X.squeeze(1)
         test_data = testData(torch.FloatTensor(test_X), torch.FloatTensor(test_Y))
-        test_loader = DataLoader(dataset=test_data, batch_size=16)
+        test_loader = DataLoader(dataset=test_data, batch_size=BATCH_SIZE)
         
         counter = Counter(train_Y)
-        #class_weights = torch.tensor([counter[0], counter[1]], dtype=torch.float32)
-        #class_weights = [max(class_weights)/x for x in class_weights]
-        #criterion = nn.BCEWithLogitsLoss(weight=torch.FloatTensor(class_weights).to(device))
         criterion = nn.BCEWithLogitsLoss(pos_weight=torch.tensor(counter[0]/counter[1]).to(device))
         
-        
         # training
-        model.train()
-        for e in range(1, 31, 1):
+        val_uar_list = []
+        max_val_uar = 0
+        best_epoch = 0
+        for e in range(1, EPOCH+1, 1):
+            model.train()
             epoch_loss = 0
             epoch_uar = 0
             for X_batch, y_batch in train_loader:
@@ -263,25 +315,30 @@ if __name__ == "__main__":
                 
                 epoch_loss += loss.item()
                 epoch_uar += uar.item()
-        
-            print(f'Epoch {e+0:03}: | Loss: {epoch_loss/len(train_loader):.5f} | uar: {epoch_uar/len(train_loader):.3f}')
-        
-        # testing
-        y_pred_list = []
-        model.eval()
-        with torch.no_grad():
-            for X_batch, y_batch in test_loader:
-                X_batch, y_batch = X_batch.to(device), y_batch.to(device)
-                y_test_pred = model(X_batch)
-                y_test_pred = torch.sigmoid(y_test_pred)
-                y_pred_tag = torch.round(y_test_pred).long()
-                y_pred_list.append(y_pred_tag.cpu().numpy())
                 
-                gt += y_batch.tolist()
-        y_pred_list = [a.squeeze().tolist() for a in y_pred_list]
-        
-        for sub_list in y_pred_list:
-            pred += sub_list
+            # validation
+            y_pred_list_validation = []
+            y_gt_list_validation = []
+            model.eval()
+            model_pred_and_gt(y_pred_list_validation, y_gt_list_validation, val_loader, model)
+            val_uar = recall_score(y_gt_list_validation, y_pred_list_validation, average='macro')*100
+            val_uar_list.append(val_uar)
+            if val_uar > max_val_uar:
+                max_val_uar = val_uar
+                best_epoch = e
+                checkpoint = {'epoch': e, 'model_state_dict': model.state_dict(), 'optimizer_state_dict': optimizer.state_dict(), 'loss': loss}
+                torch.save(checkpoint, './model/mlp_pytorch_best_model.pth')
+            print(f'Epoch {e+0:03}: | Loss: {epoch_loss/len(train_loader):.5f} | train_uar: {epoch_uar/len(train_loader):.3f} | val_uar: {val_uar:.2f}')
+        print('The best epoch:', best_epoch)
+
+        # testing
+        y_pred_list_testing = []
+        model = binaryClassification()
+        model.to(device)
+        checkpoint = torch.load('./model/mlp_pytorch_best_model.pth')
+        model.load_state_dict(checkpoint['model_state_dict'])
+        model.eval()
+        model_pred_and_gt(pred, gt, test_loader, model)
         
     print('UAR:', round(recall_score(gt, pred, average='macro')*100, 2), '%')
     #print('ACC:', round(accuracy_score(gt, pred)*100, 2), '%')
