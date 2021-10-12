@@ -58,22 +58,22 @@ class binaryClassification(nn.Module):
         # Number of input features is 270.
         self.layer_1 = nn.Linear(270, 64) 
         self.layer_2 = nn.Linear(64, 32)
-        #self.layer_3 = nn.Linear(32, 16)
-        self.layer_out = nn.Linear(32, 1) 
+        self.layer_3 = nn.Linear(32, 16)
+        self.layer_out = nn.Linear(16, 1) 
         
         self.relu = nn.ReLU()
-        self.dropout = nn.Dropout(p=0.1)
+        self.dropout = nn.Dropout(p=0.3)
         self.batchnorm1 = nn.BatchNorm1d(64)
         self.batchnorm2 = nn.BatchNorm1d(32)
-        #self.batchnorm3 = nn.BatchNorm1d(16)
+        self.batchnorm3 = nn.BatchNorm1d(16)
         
     def forward(self, inputs):
         x = self.relu(self.layer_1(inputs))
         x = self.batchnorm1(x)
         x = self.relu(self.layer_2(x))
         x = self.batchnorm2(x)
-        #x = self.relu(self.layer_3(x))
-        #x = self.batchnorm3(x)
+        x = self.relu(self.layer_3(x))
+        x = self.batchnorm3(x)
         x = self.dropout(x)
         x = self.layer_out(x)
         
@@ -240,8 +240,8 @@ def model_pred_and_gt(y_pred_list, y_gt_list, loader, model):
                 y_gt_list.append(y_batch.tolist())
 
 if __name__ == "__main__":
-    BATCH_SIZE = 16
-    LEARNING_RATE = 0.0001
+    BATCH_SIZE = 32
+    LEARNING_RATE = 0.00005
     WEIGHT_DECAY = 0.01
     EPOCH = 100
     # dimension of each utterance: (n, 45)
@@ -300,7 +300,7 @@ if __name__ == "__main__":
         test_loader = DataLoader(dataset=test_data, batch_size=BATCH_SIZE)
         
         counter = Counter(train_Y)
-        criterion = nn.BCEWithLogitsLoss(pos_weight=torch.tensor(counter[0]*0.9/counter[1]).to(device))
+        criterion = nn.BCEWithLogitsLoss(pos_weight=torch.tensor(counter[0]/counter[1]).to(device))
         
         # training
         val_uar_list = []
