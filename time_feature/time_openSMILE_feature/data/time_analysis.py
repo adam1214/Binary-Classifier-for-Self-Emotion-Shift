@@ -14,8 +14,8 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 from scipy.stats import norm
 
-def generate_interaction_sample(index_words, seq_dict, emo_dict):
-    global negative_sec_cnt, closest_self_opp_cnt, total_closest
+def generate_interaction_sample(index_words, seq_dict, emo_dict, case_num):
+    global negative_sec_cnt, closest_self_opp_cnt, total_closest, case_1, case_2, case_3
     """ 
     Generate interaction training pairs,
     total 4 class, total 5531 emo samples."""
@@ -41,7 +41,7 @@ def generate_interaction_sample(index_words, seq_dict, emo_dict):
                     pt.append(word)
                 else:
                     pp.append(word)
-
+            
             if len(pt) != 0:
                 target_.append(pt[-1])
                 target_label.append(emo_dict[pt[-1]])
@@ -56,7 +56,7 @@ def generate_interaction_sample(index_words, seq_dict, emo_dict):
                 target_.append('pad')
                 target_label.append('pad')
                 target_dist.append('None')
-                self_emo_shift.append(0)
+                self_emo_shift.append(1)
                 self_time_dur.append('None')
 
             if len(pp) != 0:
@@ -71,6 +71,13 @@ def generate_interaction_sample(index_words, seq_dict, emo_dict):
                 opposite_.append('pad')
                 opposite_label.append('pad')
                 opposite_dist.append('None')
+
+            if center_label[-1] == target_label[-1] and target_label[-1] == opposite_label[-1]:
+                case_1 += 1
+            elif center_label[-1] == target_label[-1] or center_label[-1] == opposite_label[-1]:
+                case_2 += 1
+            elif center_label[-1] != target_label[-1] and center_label[-1] != opposite_label[-1]:
+                case_3 += 1
             
             if min(time_self_opp, time_self_self) != 10000.:
                 total_closest += 1
@@ -79,10 +86,47 @@ def generate_interaction_sample(index_words, seq_dict, emo_dict):
                 closest_time_dur.append(min(time_self_opp, time_self_self))
             else:
                 closest_time_dur.append('None')
+                
+            if case_num == 1 and (not (center_label[-1] == target_label[-1] and target_label[-1] == opposite_label[-1])):
+                del center_[-1]
+                del target_[-1]
+                del opposite_[-1]
+                del center_label[-1]
+                del target_label[-1]
+                del opposite_label[-1]
+                del target_dist[-1]
+                del opposite_dist[-1]
+                del self_emo_shift[-1]
+                del self_time_dur[-1]
+                del closest_time_dur[-1]
+            elif case_num == 2 and ((not (center_label[-1] == target_label[-1] or center_label[-1] == opposite_label[-1])) or (center_label[-1] == target_label[-1] and target_label[-1] == opposite_label[-1])):
+                del center_[-1]
+                del target_[-1]
+                del opposite_[-1]
+                del center_label[-1]
+                del target_label[-1]
+                del opposite_label[-1]
+                del target_dist[-1]
+                del opposite_dist[-1]
+                del self_emo_shift[-1]
+                del self_time_dur[-1]
+                del closest_time_dur[-1]
+            elif case_num == 3 and (not (center_label[-1] != target_label[-1] and center_label[-1] != opposite_label[-1])):
+                del center_[-1]
+                del target_[-1]
+                del opposite_[-1]
+                del center_label[-1]
+                del target_label[-1]
+                del opposite_label[-1]
+                del target_dist[-1]
+                del opposite_dist[-1]
+                del self_emo_shift[-1]
+                del self_time_dur[-1]
+                del closest_time_dur[-1]
 
     return center_, target_, opposite_, center_label, target_label, opposite_label, target_dist, opposite_dist, self_emo_shift, self_time_dur, closest_time_dur
 
-def generate_interaction_data(dialog_dict, seq_dict, emo_dict, mode='context'):
+def generate_interaction_data(dialog_dict, seq_dict, emo_dict, case_num, mode='context'):
     """Generate training/testing data (emo_train.csv & emo_test.csv) under specific modes.
     
     Args:
@@ -97,7 +141,7 @@ def generate_interaction_data(dialog_dict, seq_dict, emo_dict, mode='context'):
 
     for k in dialog_dict.keys():
         dialog_order = dialog_dict[k]
-        c, t, o, cl, tl, ol, td, od, ses, std, ctd = generator(dialog_order, seq_dict, emo_dict)
+        c, t, o, cl, tl, ol, td, od, ses, std, ctd = generator(dialog_order, seq_dict, emo_dict, case_num=case_num)
         center_train += c
         target_train += t
         opposite_train += o
@@ -111,7 +155,8 @@ def generate_interaction_data(dialog_dict, seq_dict, emo_dict, mode='context'):
         closest_time_dur_train += ctd
 
     # save dialog pairs to train.csv and test.csv
-    data_filename= './all_data.csv'
+    #data_filename = './all_data.csv'
+    data_filename = './case' + str(case_num) + '_data.csv'
     column_order = ['center', 'target', 'opposite', 'center_label', 'target_label', 'opposite_label', 'target_dist', 'opposite_dist', 'self_emo_shift', 'self_time_dur', 'closest_time_dur']
     # train
     d = {'center': center_train, 'target': target_train, 'opposite': opposite_train, 'center_label': center_label_train, 
@@ -136,6 +181,9 @@ def upsampling(X, Y):
     return X_upsample, Y_upsample
 
 if __name__ == "__main__":    
+    case_1 = 0
+    case_2 = 0
+    case_3 = 0
     negative_sec_cnt = 0
     closest_self_opp_cnt = 0
     total_closest = 0
@@ -152,55 +200,69 @@ if __name__ == "__main__":
     dialog_dict = joblib.load('./dialog_rearrange.pkl')
 
     # generate data
-    generate_interaction_data(dialog_dict, feat_pooled, emo_all_dict)
-    all_data = pd.read_csv('./all_data.csv')
-    
-    self_emo_shift_self_time_dur = []
-    self_emo_shift_closest_time_dur = []
-    self_emo_no_shift_self_time_dur = []
-    self_emo_no_shift_closest_time_dur = []
-    
-    for i in range(len(all_data)):
-        if all_data['self_emo_shift'][i] == 1 and all_data['self_time_dur'][i] != 'None':
-            self_emo_shift_self_time_dur.append(float(all_data['self_time_dur'][i]))
-        elif all_data['self_emo_shift'][i] == 0 and all_data['self_time_dur'][i] != 'None':
-            self_emo_no_shift_self_time_dur.append(float(all_data['self_time_dur'][i]))
+    for case_num in range(1, 4, 1):
+        generate_interaction_data(dialog_dict, feat_pooled, emo_all_dict, case_num)
+        data_filename = './case' + str(case_num) + '_data.csv'
+        #all_data = pd.read_csv('./all_data.csv')
+        all_data = pd.read_csv(data_filename)
         
-        if all_data['self_emo_shift'][i] == 1 and all_data['closest_time_dur'][i] != 'None':
-            self_emo_shift_closest_time_dur.append(float(all_data['closest_time_dur'][i]))
-        elif all_data['self_emo_shift'][i] == 0 and all_data['closest_time_dur'][i] != 'None':
-            self_emo_no_shift_closest_time_dur.append(float(all_data['closest_time_dur'][i]))
+        self_emo_shift_self_time_dur = []
+        self_emo_shift_closest_time_dur = []
+        self_emo_no_shift_self_time_dur = []
+        self_emo_no_shift_closest_time_dur = []
+        
+        for i in range(len(all_data)):
+            if all_data['self_emo_shift'][i] == 1 and all_data['self_time_dur'][i] != 'None':
+                self_emo_shift_self_time_dur.append(float(all_data['self_time_dur'][i]))
+            elif all_data['self_emo_shift'][i] == 0 and all_data['self_time_dur'][i] != 'None':
+                self_emo_no_shift_self_time_dur.append(float(all_data['self_time_dur'][i]))
+            
+            if all_data['self_emo_shift'][i] == 1 and all_data['closest_time_dur'][i] != 'None':
+                self_emo_shift_closest_time_dur.append(float(all_data['closest_time_dur'][i]))
+            elif all_data['self_emo_shift'][i] == 0 and all_data['closest_time_dur'][i] != 'None':
+                self_emo_no_shift_closest_time_dur.append(float(all_data['closest_time_dur'][i]))
+        
+        fig, ax = plt.subplots(nrows=2, ncols=2, figsize=(16, 12))
+        plot = sns.distplot(pd.DataFrame(self_emo_shift_self_time_dur, columns=[''])[''], bins = int((max(self_emo_shift_self_time_dur, default=1)-min(self_emo_shift_self_time_dur, default=0))/1), norm_hist=False, ax=ax[0][0])
+        plot = sns.distplot(pd.DataFrame(self_emo_shift_closest_time_dur, columns=[''])[''], bins = int((max(self_emo_shift_closest_time_dur, default=1)-min(self_emo_shift_closest_time_dur, default=0))/1), norm_hist=False, ax=ax[0][1])
+        plot = sns.distplot(pd.DataFrame(self_emo_no_shift_self_time_dur, columns=[''])[''], bins = int((max(self_emo_no_shift_self_time_dur, default=1)-min(self_emo_no_shift_self_time_dur, default=0))/1), norm_hist=False, ax=ax[1][0])
+        plot = sns.distplot(pd.DataFrame(self_emo_no_shift_closest_time_dur, columns=[''])[''], bins = int((max(self_emo_no_shift_closest_time_dur, default=1)-min(self_emo_no_shift_closest_time_dur, default=0))/1), norm_hist=False, ax=ax[1][1])
+        
+        ax[0][0].text(0.4, 0.5, '$\mu = ' + str(round(norm.fit(self_emo_shift_self_time_dur)[0],2)) + ', $sigma = ' + str(round(norm.fit(self_emo_shift_self_time_dur)[1],2)), horizontalalignment='center', verticalalignment='center', transform=ax[0][0].transAxes, fontsize=12)
+        ax[0][0].set_title('self emo shift_self time dur (sec)')
+        ax[0][1].text(0.4, 0.5, '$\mu = ' + str(round(norm.fit(self_emo_shift_closest_time_dur)[0],2)) + ', $sigma = ' + str(round(norm.fit(self_emo_shift_closest_time_dur)[1],2)), horizontalalignment='center', verticalalignment='center', transform=ax[0][1].transAxes, fontsize=12)
+        ax[0][1].set_title('self emo shift_closest time dur (sec)')
+        ax[1][0].text(0.4, 0.5, '$\mu = ' + str(round(norm.fit(self_emo_no_shift_self_time_dur)[0],2)) + ', $sigma = ' + str(round(norm.fit(self_emo_no_shift_self_time_dur)[1],2)), horizontalalignment='center', verticalalignment='center', transform=ax[1][0].transAxes, fontsize=12)
+        ax[1][0].set_title('self emo no shift_self time dur (sec)')
+        ax[1][1].text(0.4, 0.5, '$\mu = ' + str(round(norm.fit(self_emo_no_shift_closest_time_dur)[0],2)) + ', $sigma = ' + str(round(norm.fit(self_emo_no_shift_closest_time_dur)[1],2)), horizontalalignment='center', verticalalignment='center', transform=ax[1][1].transAxes, fontsize=12)
+        ax[1][1].set_title('self emo no shift_closest time dur (sec)')
+        for i in range(0,2,1):
+            for j in range(0,2,1):
+                ax[i][j].set_xlim((-5, 80))  #x軸刻度範圍
+        plt.tight_layout()
+        plt.savefig('./case' + str(case_num) + '_density.png')
     
-    fig, ax = plt.subplots(nrows=2, ncols=2, figsize=(16, 12))
-    plot = sns.distplot(pd.DataFrame(self_emo_shift_self_time_dur, columns=['self emo shift_self time dur (sec)'])['self emo shift_self time dur (sec)'], bins = int((max(self_emo_shift_self_time_dur)-min(self_emo_shift_self_time_dur))/1), norm_hist=False, ax=ax[0][0])
-    plot = sns.distplot(pd.DataFrame(self_emo_shift_closest_time_dur, columns=['self emo shift_closest time dur (sec)'])['self emo shift_closest time dur (sec)'], bins = int((max(self_emo_shift_closest_time_dur)-min(self_emo_shift_closest_time_dur))/1), norm_hist=False, ax=ax[0][1])
-    plot = sns.distplot(pd.DataFrame(self_emo_no_shift_self_time_dur, columns=['self emo no shift_self time dur (sec)'])['self emo no shift_self time dur (sec)'], bins = int((max(self_emo_no_shift_self_time_dur)-min(self_emo_no_shift_self_time_dur))/1), norm_hist=False, ax=ax[1][0])
-    plot = sns.distplot(pd.DataFrame(self_emo_no_shift_closest_time_dur, columns=['self emo no shift_closest time dur (sec)'])['self emo no shift_closest time dur (sec)'], bins = int((max(self_emo_no_shift_closest_time_dur)-min(self_emo_no_shift_closest_time_dur))/1), norm_hist=False, ax=ax[1][1])
+        fig, ax = plt.subplots(nrows=2, ncols=2, figsize=(16, 12))
+        plot = sns.histplot(pd.DataFrame(self_emo_shift_self_time_dur, columns=[''])[''], bins = int((max(self_emo_shift_self_time_dur, default=1)-min(self_emo_shift_self_time_dur, default=0))/1), ax=ax[0][0])
+        plot = sns.histplot(pd.DataFrame(self_emo_shift_closest_time_dur, columns=[''])[''], bins = int((max(self_emo_shift_closest_time_dur, default=1)-min(self_emo_shift_closest_time_dur, default=0))/1), ax=ax[0][1])
+        plot = sns.histplot(pd.DataFrame(self_emo_no_shift_self_time_dur, columns=[''])[''], bins = int((max(self_emo_no_shift_self_time_dur, default=1)-min(self_emo_no_shift_self_time_dur, default=0))/1), ax=ax[1][0])
+        plot = sns.histplot(pd.DataFrame(self_emo_no_shift_closest_time_dur, columns=[''])[''], bins = int((max(self_emo_no_shift_closest_time_dur, default=1)-min(self_emo_no_shift_closest_time_dur, default=0))/1), ax=ax[1][1])
+        for i in range(0,2,1):
+            for j in range(0,2,1):
+                ax[i][j].set_xlim((-5, 80))  #x軸刻度範圍
+        ax[0][0].text(0.4, 0.5, '$\mu = ' + str(round(norm.fit(self_emo_shift_self_time_dur)[0],2)) + ', $sigma = ' + str(round(norm.fit(self_emo_shift_self_time_dur)[1],2)), horizontalalignment='center', verticalalignment='center', transform=ax[0][0].transAxes, fontsize=12)
+        ax[0][0].set_title('self emo shift_self time dur (sec)')
+        ax[0][1].text(0.4, 0.5, '$\mu = ' + str(round(norm.fit(self_emo_shift_closest_time_dur)[0],2)) + ', $sigma = ' + str(round(norm.fit(self_emo_shift_closest_time_dur)[1],2)), horizontalalignment='center', verticalalignment='center', transform=ax[0][1].transAxes, fontsize=12)
+        ax[0][1].set_title('self emo shift_closest time dur (sec)')
+        ax[1][0].text(0.4, 0.5, '$\mu = ' + str(round(norm.fit(self_emo_no_shift_self_time_dur)[0],2)) + ', $sigma = ' + str(round(norm.fit(self_emo_no_shift_self_time_dur)[1],2)), horizontalalignment='center', verticalalignment='center', transform=ax[1][0].transAxes, fontsize=12)
+        ax[1][0].set_title('self emo no shift_self time dur (sec)')
+        ax[1][1].text(0.4, 0.5, '$\mu = ' + str(round(norm.fit(self_emo_no_shift_closest_time_dur)[0],2)) + ', $sigma = ' + str(round(norm.fit(self_emo_no_shift_closest_time_dur)[1],2)), horizontalalignment='center', verticalalignment='center', transform=ax[1][1].transAxes, fontsize=12)
+        ax[1][1].set_title('self emo no shift_closest time dur (sec)')
+        plt.tight_layout()
+        plt.savefig('./case' + str(case_num) + '_count.png')
+        
+        print('closest time是根據對方語者所產生的機率:', closest_self_opp_cnt/total_closest)
     
-    ax[0][0].text(0.4, 0.5, '$\mu = ' + str(round(norm.fit(self_emo_shift_self_time_dur)[0],2)) + ', $sigma = ' + str(round(norm.fit(self_emo_shift_self_time_dur)[1],2)), horizontalalignment='center', verticalalignment='center', transform=ax[0][0].transAxes, fontsize=12)
-    ax[0][1].text(0.4, 0.5, '$\mu = ' + str(round(norm.fit(self_emo_shift_closest_time_dur)[0],2)) + ', $sigma = ' + str(round(norm.fit(self_emo_shift_closest_time_dur)[1],2)), horizontalalignment='center', verticalalignment='center', transform=ax[0][1].transAxes, fontsize=12)
-    ax[1][0].text(0.4, 0.5, '$\mu = ' + str(round(norm.fit(self_emo_no_shift_self_time_dur)[0],2)) + ', $sigma = ' + str(round(norm.fit(self_emo_no_shift_self_time_dur)[1],2)), horizontalalignment='center', verticalalignment='center', transform=ax[1][0].transAxes, fontsize=12)
-    ax[1][1].text(0.4, 0.5, '$\mu = ' + str(round(norm.fit(self_emo_no_shift_closest_time_dur)[0],2)) + ', $sigma = ' + str(round(norm.fit(self_emo_no_shift_closest_time_dur)[1],2)), horizontalalignment='center', verticalalignment='center', transform=ax[1][1].transAxes, fontsize=12)
-    for i in range(0,2,1):
-        for j in range(0,2,1):
-            ax[i][j].set_xlim((-5, 80))  #x軸刻度範圍
-    plt.tight_layout()
-    plt.savefig('density.png')
-
-    fig, ax = plt.subplots(nrows=2, ncols=2, figsize=(16, 12))
-    plot = sns.histplot(pd.DataFrame(self_emo_shift_self_time_dur, columns=['self emo shift_self time dur (sec)'])['self emo shift_self time dur (sec)'], bins = int((max(self_emo_shift_self_time_dur)-min(self_emo_shift_self_time_dur))/1), ax=ax[0][0])
-    plot = sns.histplot(pd.DataFrame(self_emo_shift_closest_time_dur, columns=['self emo shift_closest time dur (sec)'])['self emo shift_closest time dur (sec)'], bins = int((max(self_emo_shift_closest_time_dur)-min(self_emo_shift_closest_time_dur))/1), ax=ax[0][1])
-    plot = sns.histplot(pd.DataFrame(self_emo_no_shift_self_time_dur, columns=['self emo no shift_self time dur (sec)'])['self emo no shift_self time dur (sec)'], bins = int((max(self_emo_no_shift_self_time_dur)-min(self_emo_no_shift_self_time_dur))/1), ax=ax[1][0])
-    plot = sns.histplot(pd.DataFrame(self_emo_no_shift_closest_time_dur, columns=['self emo no shift_closest time dur (sec)'])['self emo no shift_closest time dur (sec)'], bins = int((max(self_emo_no_shift_closest_time_dur)-min(self_emo_no_shift_closest_time_dur))/1), ax=ax[1][1])
-    for i in range(0,2,1):
-        for j in range(0,2,1):
-            ax[i][j].set_xlim((-5, 80))  #x軸刻度範圍
-    ax[0][0].text(0.4, 0.5, '$\mu = ' + str(round(norm.fit(self_emo_shift_self_time_dur)[0],2)) + ', $sigma = ' + str(round(norm.fit(self_emo_shift_self_time_dur)[1],2)), horizontalalignment='center', verticalalignment='center', transform=ax[0][0].transAxes, fontsize=12)
-    ax[0][1].text(0.4, 0.5, '$\mu = ' + str(round(norm.fit(self_emo_shift_closest_time_dur)[0],2)) + ', $sigma = ' + str(round(norm.fit(self_emo_shift_closest_time_dur)[1],2)), horizontalalignment='center', verticalalignment='center', transform=ax[0][1].transAxes, fontsize=12)
-    ax[1][0].text(0.4, 0.5, '$\mu = ' + str(round(norm.fit(self_emo_no_shift_self_time_dur)[0],2)) + ', $sigma = ' + str(round(norm.fit(self_emo_no_shift_self_time_dur)[1],2)), horizontalalignment='center', verticalalignment='center', transform=ax[1][0].transAxes, fontsize=12)
-    ax[1][1].text(0.4, 0.5, '$\mu = ' + str(round(norm.fit(self_emo_no_shift_closest_time_dur)[0],2)) + ', $sigma = ' + str(round(norm.fit(self_emo_no_shift_closest_time_dur)[1],2)), horizontalalignment='center', verticalalignment='center', transform=ax[1][1].transAxes, fontsize=12)
-    plt.tight_layout()
-    plt.savefig('count.png')
-    
-    print('closest time是根據對方語者所產生的機率:', closest_self_opp_cnt/total_closest)
-    
+    print('case1:', case_1/(case_1+case_2+case_3))
+    print('case2:', case_2/(case_1+case_2+case_3))
+    print('case3:', case_3/(case_1+case_2+case_3))
