@@ -11,7 +11,7 @@ from imblearn.over_sampling import SMOTE, RandomOverSampler
 from imblearn.under_sampling import ClusterCentroids
 from imblearn.combine import SMOTETomek, SMOTEENN
 
-def generate_interaction_sample(index_words, seq_dict, emo_dict):
+def generate_interaction_sample(index_words, seq_dict, emo_dict, val=False):
     """ 
     Generate interaction training pairs,
     total 4 class, total 5531 emo samples."""
@@ -22,8 +22,9 @@ def generate_interaction_sample(index_words, seq_dict, emo_dict):
     opposite_dist = []
     self_emo_shift = []
     for index, center in enumerate(index_words):
-        if emo_dict[center] in emo:
-            #if True:
+        if emo_dict[center] in emo or val == True:
+            if emo_dict[center] in emo:
+                four_type_utt_list.append(center)
             center_.append(center)
             center_label.append(emo_dict[center])
             pt = []
@@ -88,7 +89,7 @@ def generate_interaction_data(dialog_dict, seq_dict, emo_dict, val_set, mode='co
             self_emo_shift_train += ses
         # validation set
         else:
-            c, t, o, cl, tl, ol, td, od, ses = generator(dialog_order, seq_dict, emo_dict)
+            c, t, o, cl, tl, ol, td, od, ses = generator(dialog_order, seq_dict, emo_dict, val=True)
             center_val += c
             target_val += t
             opposite_val += o
@@ -130,7 +131,8 @@ def gen_train_test_pair(data_frame, X, Y, test_utt_name=None):
         self_emo_shift = row[-1]
         
         X[-1].append(np.concatenate((center_utt_feat.flatten(), target_utt_feat.flatten(), oppo_utt_feat.flatten())))
-        Y.append(self_emo_shift)
+        if center_utt_name in four_type_utt_list:
+            Y.append(self_emo_shift)
         
         if test_utt_name != None:
             test_utt_name.append(center_utt_name)
@@ -152,6 +154,7 @@ def upsampling(X, Y):
     return X_upsample, Y_upsample
 
 if __name__ == "__main__":
+    four_type_utt_list = [] # len:5531
     # dimension of each utterance: (n, 45)
     # n:number of time frames in the utterance
     emo_num_dict = {'ang': 0, 'hap': 1, 'neu':2, 'sad': 3, 'sur': 4, 'fru': 5, 'xxx': 6, 'oth': 7, 'fea': 8, 'dis': 9, 'pad': 10}
@@ -201,10 +204,11 @@ if __name__ == "__main__":
         gt += test_Y
         for i, utt_name in enumerate(test_utt_name):
             pred_prob_dict[utt_name] = pred_prob_np[i][1]
-            if pred_prob_np[i][1] > 0.5:
-                p.append(1)
-            else:
-                p.append(0)
+            if utt_name in four_type_utt_list:
+                if pred_prob_np[i][1] > 0.5:
+                    p.append(1)
+                else:
+                    p.append(0)
         pred += p
         
     print('UAR:', round(recall_score(gt, pred, average='macro')*100, 2), '%')
