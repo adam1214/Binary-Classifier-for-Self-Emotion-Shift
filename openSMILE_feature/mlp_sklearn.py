@@ -10,7 +10,7 @@ from collections import Counter
 from imblearn.over_sampling import SMOTE, RandomOverSampler
 from imblearn.combine import SMOTETomek, SMOTEENN
 
-def generate_interaction_sample(index_words, seq_dict, emo_dict):
+def generate_interaction_sample(index_words, seq_dict, emo_dict, val=False):
     """ 
     Generate interaction training pairs,
     total 4 class, total 5531 emo samples."""
@@ -21,8 +21,9 @@ def generate_interaction_sample(index_words, seq_dict, emo_dict):
     opposite_dist = []
     self_emo_shift = []
     for index, center in enumerate(index_words):
-        if emo_dict[center] in emo:
-            #if True:
+        if emo_dict[center] in emo or val == True:
+            if emo_dict[center] in emo:
+                four_type_utt_list.append(center)
             center_.append(center)
             center_label.append(emo_dict[center])
             pt = []
@@ -87,7 +88,7 @@ def generate_interaction_data(dialog_dict, seq_dict, emo_dict, val_set, mode='co
             self_emo_shift_train += ses
         # validation set
         else:
-            c, t, o, cl, tl, ol, td, od, ses = generator(dialog_order, seq_dict, emo_dict)
+            c, t, o, cl, tl, ol, td, od, ses = generator(dialog_order, seq_dict, emo_dict, val=True)
             center_val += c
             target_val += t
             opposite_val += o
@@ -113,7 +114,7 @@ def generate_interaction_data(dialog_dict, seq_dict, emo_dict, val_set, mode='co
     df = pd.DataFrame(data=d)
     df[column_order].to_csv(val_filename, sep=',', index = False)
 
-def gen_train_test_pair(data_frame, X, Y):
+def gen_train_test_pair(data_frame, X, Y, test_utt_name=None):
     for index, row in data_frame.iterrows():
         X.append([])
         center_utt_name = row[0]
@@ -129,7 +130,11 @@ def gen_train_test_pair(data_frame, X, Y):
         self_emo_shift = row[-1]
         
         X[-1].append(np.concatenate((center_utt_feat.flatten(), target_utt_feat.flatten(), oppo_utt_feat.flatten())))
-        Y.append(self_emo_shift)
+        if center_utt_name in four_type_utt_list:
+            Y.append(self_emo_shift)
+
+        if test_utt_name != None:
+            test_utt_name.append(center_utt_name)
 
 def upsampling(X, Y):
     #counter = Counter(Y)
@@ -162,10 +167,14 @@ if __name__ == "__main__":
     val = ['Ses01', 'Ses02', 'Ses03', 'Ses04', 'Ses05']
     pred = []
     gt = []
+    pred_prob_dict = {}
     for val_ in val:
+        four_type_utt_list = [] # len:5531
         print("################{}################".format(val_))
         
         train_X, train_Y, test_X, test_Y = [], [], [], []
+        test_utt_name = []
+
         # generate training data/val data
         generate_interaction_data(dialog_dict, feat_pooled, emo_all_dict, val_set=val_)
         emo_train = pd.read_csv('./data/emo_train.csv')
@@ -181,14 +190,27 @@ if __name__ == "__main__":
         clf.fit(X_upsample, Y_upsample)
         
         # testing
-        gen_train_test_pair(emo_test, test_X, test_Y)
+        gen_train_test_pair(emo_test, test_X, test_Y, test_utt_name)
         test_X = np.array(test_X)
         test_X = test_X.squeeze(1)
-        p = clf.predict(test_X)
+        #p = clf.predict(test_X)
+        pred_prob_np = clf.predict_proba(test_X)
+        p = []
         
-        pred += p.tolist()
+        #pred += p.tolist()
         gt += test_Y
+        for i, utt_name in enumerate(test_utt_name):
+            pred_prob_dict[utt_name] = pred_prob_np[i][1]
+            if utt_name in four_type_utt_list:
+                if pred_prob_np[i][1] > 0.5:
+                    p.append(1)
+                else:
+                    p.append(0)
+        pred += p
+
     print('UAR:', round(recall_score(gt, pred, average='macro')*100, 2), '%')
     #print('ACC:', round(accuracy_score(gt, pred)*100, 2), '%')
     print('precision (predcit label 1):', round(precision_score(gt, pred)*100, 2), '%')
     print(confusion_matrix(gt, pred))
+
+    joblib.dump(pred_prob_dict, './output/MLPSklearn_emo_shift_output.pkl')

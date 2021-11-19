@@ -30,24 +30,27 @@ class trainData(Dataset):
     
 class valData(Dataset):
     
-    def __init__(self, X_data, y_data):
+    def __init__(self, X_data, y_data, utt_name):
         self.X_data = X_data
         self.y_data = y_data
+        self.utt_name = utt_name
         
     def __getitem__(self, index):
-        return self.X_data[index], self.y_data[index].long()
+        #pdb.set_trace()
+        return self.X_data[index], self.y_data[index].long(), self.utt_name[index]
         
     def __len__ (self):
         return len(self.X_data)
     
 class testData(Dataset):
     
-    def __init__(self, X_data, y_data):
+    def __init__(self, X_data, y_data, utt_name):
         self.X_data = X_data
         self.y_data = y_data
+        self.utt_name = utt_name
         
     def __getitem__(self, index):
-        return self.X_data[index], self.y_data[index].long()
+        return self.X_data[index], self.y_data[index].long(), self.utt_name[index]
         
     def __len__ (self):
         return len(self.X_data)
@@ -85,7 +88,7 @@ def binary_uar(y_pred, y_test):
 
     return uar
 
-def generate_interaction_sample(index_words, seq_dict, emo_dict):
+def generate_interaction_sample(index_words, seq_dict, emo_dict, val=False):
     """ 
     Generate interaction training pairs,
     total 4 class, total 5531 emo samples."""
@@ -96,8 +99,9 @@ def generate_interaction_sample(index_words, seq_dict, emo_dict):
     opposite_dist = []
     self_emo_shift = []
     for index, center in enumerate(index_words):
-        if emo_dict[center] in emo:
-            #if True:
+        if emo_dict[center] in emo or val == True:
+            if emo_dict[center] in emo:
+                four_type_utt_list.append(center)
             center_.append(center)
             center_label.append(emo_dict[center])
             pt = []
@@ -175,7 +179,7 @@ def generate_interaction_data(dialog_dict, seq_dict, emo_dict, test_set, val_set
             self_emo_shift_val += ses
         # test set
         else:
-            c, t, o, cl, tl, ol, td, od, ses = generator(dialog_order, seq_dict, emo_dict)
+            c, t, o, cl, tl, ol, td, od, ses = generator(dialog_order, seq_dict, emo_dict, val=True)
             center_test += c
             target_test += t
             opposite_test += o
@@ -207,9 +211,8 @@ def generate_interaction_data(dialog_dict, seq_dict, emo_dict, test_set, val_set
     df = pd.DataFrame(data=d)
     df[column_order].to_csv(test_filename, sep=',', index = False)
 
-def gen_train_val_test(data_frame, X, Y):
+def gen_train_val_test(data_frame, X, Y, utt_name=None):
     for index, row in data_frame.iterrows():
-        X.append([])
         center_utt_name = row[0]
         target_utt_name = row[1]
         oppo_utt_name = row[2]
@@ -221,23 +224,41 @@ def gen_train_val_test(data_frame, X, Y):
         #target_utt_emo = emo_num_dict[row[4]]
         #oppo_utt_emo = emo_num_dict[row[5]]
         self_emo_shift = row[-1]
-        
-        X[-1].append(np.concatenate((center_utt_feat.flatten(), target_utt_feat.flatten(), oppo_utt_feat.flatten())))
-        Y.append(self_emo_shift)
 
-def model_pred_and_gt(y_pred_list, y_gt_list, loader, model):
+        if utt_name != None: # test & val
+            X.append([])
+            X[-1].append(np.concatenate((center_utt_feat.flatten(), target_utt_feat.flatten(), oppo_utt_feat.flatten())))
+            Y.append(self_emo_shift)
+            utt_name.append(center_utt_name)
+            
+        elif utt_name == None and center_utt_name in four_type_utt_list: # train (get four type utt only)
+            X.append([])
+            X[-1].append(np.concatenate((center_utt_feat.flatten(), target_utt_feat.flatten(), oppo_utt_feat.flatten())))
+            Y.append(self_emo_shift)
+
+def model_pred_and_gt(y_pred_list, y_gt_list, loader, model, pred_prob_dict=None):
     with torch.no_grad():
-        for X_batch, y_batch in loader:
+        for X_batch, y_batch, utt_name in loader: # X_batch.shape = (32, 270), y_batch.shape = ([32])
             X_batch, y_batch = X_batch.to(device), y_batch.to(device)
             y_pred = model(X_batch)
-            y_pred = torch.sigmoid(y_pred)
-            y_pred_tag = torch.round(y_pred).long()
+            y_pred = torch.sigmoid(y_pred) # (32, 1)
+            y_pred_tag = torch.round(y_pred).long() # (32, 1)
+            
+            for i in range(0, len(utt_name), 1):
+                if utt_name[i] in four_type_utt_list:
+                    y_pred_list.append((y_pred_tag.cpu())[i][0])
+                    y_gt_list.append((y_batch.cpu())[i])
+                
+                if pred_prob_dict != None:
+                    pred_prob_dict[utt_name[i]] = (y_pred.cpu())[i][0].item()
+            '''
             try:
                 y_pred_list += y_pred_tag.cpu().squeeze().tolist()
                 y_gt_list += y_batch.tolist()
             except:
                 y_pred_list.append(y_pred_tag.cpu().squeeze().tolist())
                 y_gt_list.append(y_batch.tolist())
+            '''
 
 if __name__ == "__main__":
     BATCH_SIZE = 32
@@ -261,11 +282,13 @@ if __name__ == "__main__":
     val = ['Ses02', 'Ses03', 'Ses01', 'Ses05', 'Ses04']
     pred = []
     gt = []
+    pred_prob_dict = {}
     
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     print(device)
     
     for test_, val_ in zip(test, val):
+        four_type_utt_list = [] # len:5531
         print("################{}################".format(test_))
         
         model = binaryClassification()
@@ -273,13 +296,14 @@ if __name__ == "__main__":
         optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE, weight_decay=WEIGHT_DECAY)
         
         
-        # generate training data/val data/ test data
+        # generate training data/ val data/ test data
         generate_interaction_data(dialog_dict, feat_pooled, emo_all_dict, test_set=test_, val_set=val_)
         emo_train = pd.read_csv('./data/emo_train.csv')
         emo_val = pd.read_csv('./data/emo_val.csv')
         emo_test = pd.read_csv('./data/emo_test.csv')
         
         train_X, train_Y, val_X, val_Y, test_X, test_Y = [], [], [], [], [], []
+        test_utt_name, val_utt_name = [], []
         
         gen_train_val_test(emo_train, train_X, train_Y)
         train_X = np.array(train_X)
@@ -287,16 +311,16 @@ if __name__ == "__main__":
         train_data = trainData(torch.FloatTensor(train_X), torch.FloatTensor(train_Y))
         train_loader = DataLoader(dataset=train_data, batch_size=BATCH_SIZE, shuffle=True)
         
-        gen_train_val_test(emo_val, val_X, val_Y)
+        gen_train_val_test(emo_val, val_X, val_Y, val_utt_name)
         val_X = np.array(val_X)
         val_X = val_X.squeeze(1)
-        val_data = valData(torch.FloatTensor(val_X), torch.FloatTensor(val_Y))
+        val_data = valData(torch.FloatTensor(val_X), torch.FloatTensor(val_Y), val_utt_name)
         val_loader = DataLoader(dataset=val_data, batch_size=BATCH_SIZE)
         
-        gen_train_val_test(emo_test, test_X, test_Y)
+        gen_train_val_test(emo_test, test_X, test_Y, test_utt_name)
         test_X = np.array(test_X)
         test_X = test_X.squeeze(1)
-        test_data = testData(torch.FloatTensor(test_X), torch.FloatTensor(test_Y))
+        test_data = testData(torch.FloatTensor(test_X), torch.FloatTensor(test_Y), test_utt_name)
         test_loader = DataLoader(dataset=test_data, batch_size=BATCH_SIZE)
         
         counter = Counter(train_Y)
@@ -348,9 +372,11 @@ if __name__ == "__main__":
         checkpoint = torch.load('./model/mlp_pytorch_best_model.pth')
         model.load_state_dict(checkpoint['model_state_dict'])
         model.eval()
-        model_pred_and_gt(pred, gt, test_loader, model)
+        model_pred_and_gt(pred, gt, test_loader, model, pred_prob_dict)
         
     print('UAR:', round(recall_score(gt, pred, average='macro')*100, 2), '%')
     #print('ACC:', round(accuracy_score(gt, pred)*100, 2), '%')
     print('precision (predcit label 1):', round(precision_score(gt, pred)*100, 2), '%')
     print(confusion_matrix(gt, pred))
+    
+    joblib.dump(pred_prob_dict, './output/MLPPytorch_emo_shift_output.pkl')
