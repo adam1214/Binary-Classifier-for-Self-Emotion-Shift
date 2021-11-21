@@ -149,8 +149,8 @@ def gen_train_test_pair(data_frame, X, Y, test_utt_name=None):
             test_utt_name.append(center_utt_name)
         
 def upsampling(X, Y):
-    #counter = Counter(Y)
-    #print(counter)
+    counter = Counter(Y)
+    print(counter)
     
     # transform the dataset
     #oversample = SMOTE(random_state=100, n_jobs=-1, sampling_strategy='auto', k_neighbors=5)

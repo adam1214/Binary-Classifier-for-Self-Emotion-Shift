@@ -10,6 +10,7 @@ from collections import Counter
 from imblearn.over_sampling import SMOTE, RandomOverSampler 
 from imblearn.under_sampling import ClusterCentroids
 from imblearn.combine import SMOTETomek, SMOTEENN
+from collections import Counter
 
 def generate_interaction_sample(index_words, seq_dict, emo_dict, val=False):
     """ 
@@ -156,6 +157,31 @@ def upsampling(X, Y):
 
     return X_upsample, Y_upsample
 
+def gen_train_val_test(data_frame, X, Y, utt_name=None):
+    for index, row in data_frame.iterrows():
+        center_utt_name = row[0]
+        target_utt_name = row[1]
+        oppo_utt_name = row[2]
+        
+        center_utt_feat = feat_pooled[center_utt_name]
+        target_utt_feat = feat_pooled[target_utt_name]
+        oppo_utt_feat = feat_pooled[oppo_utt_name]
+        
+        #target_utt_emo = emo_num_dict[row[4]]
+        #oppo_utt_emo = emo_num_dict[row[5]]
+        self_emo_shift = row[-1]
+
+        if utt_name != None: # test & val
+            X.append([])
+            X[-1].append(np.concatenate((center_utt_feat.flatten(), target_utt_feat.flatten(), oppo_utt_feat.flatten())))
+            Y.append(self_emo_shift)
+            utt_name.append(center_utt_name)
+            
+        elif utt_name == None and center_utt_name in four_type_utt_list: # train (get four type utt only)
+            X.append([])
+            X[-1].append(np.concatenate((center_utt_feat.flatten(), target_utt_feat.flatten(), oppo_utt_feat.flatten())))
+            Y.append(self_emo_shift)
+
 if __name__ == "__main__":
     # dimension of each utterance: (n, 45)
     # n:number of time frames in the utterance
@@ -183,3 +209,18 @@ if __name__ == "__main__":
         emo_test = pd.read_csv('./data/emo_test.csv')
         break
     joblib.dump(utt_emo_shift_dict, './data/emo_shift_all.pkl')
+
+    for val_ in val:
+        train_X, train_Y = [], []
+        test_utt_name = []
+
+        # generate training data/val data
+        generate_interaction_data(dialog_dict, feat_pooled, emo_all_dict, val_set=val_)
+        emo_train = pd.read_csv('./data/emo_train.csv')
+        gen_train_val_test(emo_train, train_X, train_Y)
+        counter = Counter(train_Y)
+        utt_emo_shift_dict = joblib.load('./data/emo_shift_all.pkl')
+        utt_emo_shift_dict['fold'+val_[-1]+'_0'] = counter[0]
+        utt_emo_shift_dict['fold'+val_[-1]+'_1'] = counter[1]
+        joblib.dump(utt_emo_shift_dict, './data/emo_shift_all.pkl')
+        
