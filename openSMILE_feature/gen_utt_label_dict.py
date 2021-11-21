@@ -42,16 +42,16 @@ def generate_interaction_sample(index_words, seq_dict, emo_dict, val=False):
                 target_dist.append(index - index_words.index(pt[-1]))
                 if emo_dict[pt[-1]] == emo_dict[center]:
                     self_emo_shift.append(0)
-                    utt_emo_shift_dict[center] = 0
+                    utt_emo_shift_dict[center] = '0'
                 else:
                     self_emo_shift.append(1)
-                    utt_emo_shift_dict[center] = 1
+                    utt_emo_shift_dict[center] = '1'
             else:
                 target_.append('pad')
                 target_label.append('pad')
                 target_dist.append('None')
                 self_emo_shift.append(0)
-                utt_emo_shift_dict[center] = 0
+                utt_emo_shift_dict[center] = '0'
 
             if len(pp) != 0:
                 opposite_.append(pp[-1])
