@@ -144,8 +144,8 @@ def gen_train_test_pair(data_frame, X, Y, test_utt_name=None):
         #oppo_utt_emo = emo_num_dict[row[5]]
         self_emo_shift = row[-1]
         
-        X[-1].append(np.concatenate((center_utt_feat.flatten(), target_utt_feat.flatten(), oppo_utt_feat.flatten())))
-        #X[-1].append(target_utt_feat.flatten(), oppo_utt_feat.flatten())
+        #X[-1].append(np.concatenate((center_utt_feat.flatten(), target_utt_feat.flatten(), oppo_utt_feat.flatten())))
+        X[-1].append(np.concatenate((target_utt_feat.flatten(), oppo_utt_feat.flatten())))
         if center_utt_name in four_type_utt_list:
             Y.append(self_emo_shift)
 

@@ -3,7 +3,7 @@ import argparse
 from argparse import RawTextHelpFormatter
 
 parser = argparse.ArgumentParser(formatter_class=RawTextHelpFormatter)
-parser.add_argument('-r', "--file_name", type=int, help="select file", default='')
+parser.add_argument('-r', "--file_name", type=str, help="select file", default='')
 args = parser.parse_args()
 
 f = open(args.file_name)
