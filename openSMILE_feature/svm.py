@@ -10,6 +10,9 @@ from collections import Counter
 from imblearn.over_sampling import SMOTE, RandomOverSampler 
 from imblearn.under_sampling import ClusterCentroids
 from imblearn.combine import SMOTETomek, SMOTEENN
+import argparse
+from argparse import RawTextHelpFormatter
+
 '''
 import numpy as np
 from sklearn.pipeline import make_pipeline
@@ -142,6 +145,7 @@ def gen_train_test_pair(data_frame, X, Y, test_utt_name=None):
         self_emo_shift = row[-1]
         
         X[-1].append(np.concatenate((center_utt_feat.flatten(), target_utt_feat.flatten(), oppo_utt_feat.flatten())))
+        #X[-1].append(target_utt_feat.flatten(), oppo_utt_feat.flatten())
         if center_utt_name in four_type_utt_list:
             Y.append(self_emo_shift)
 
@@ -165,6 +169,9 @@ def upsampling(X, Y):
     return X_upsample, Y_upsample
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(formatter_class=RawTextHelpFormatter)
+    parser.add_argument('-r', "--random_num", type=int, help="select random number?", default=100)
+    args = parser.parse_args()
     # dimension of each utterance: (n, 45)
     # n:number of time frames in the utterance
     emo_num_dict = {'ang': 0, 'hap': 1, 'neu':2, 'sad': 3, 'sur': 4, 'fru': 5, 'xxx': 6, 'oth': 7, 'fea': 8, 'dis': 9, 'pad': 10}
@@ -198,7 +205,7 @@ if __name__ == "__main__":
         #train_X = np.array(train_X)
         #train_X = train_X.squeeze(1)
         
-        clf = make_pipeline(SVC(kernel='rbf', random_state=100, probability=True))
+        clf = make_pipeline(SVC(kernel='rbf', random_state=args.random_num, probability=True))
         clf.fit(X_upsample, Y_upsample)
         
         # testing
@@ -226,3 +233,13 @@ if __name__ == "__main__":
     print(confusion_matrix(gt, pred))
 
     joblib.dump(pred_prob_dict, './output/SVM_emo_shift_output.pkl')
+    
+    path = 'uar.txt'
+    f = open(path, 'a')
+    f.write(str(recall_score(gt, pred, average='macro')*100)+'\n')
+    f.close()
+    
+    path = 'precision.txt'
+    f = open(path, 'a')
+    f.write(str(precision_score(gt, pred)*100)+'\n')
+    f.close()
