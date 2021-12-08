@@ -12,7 +12,7 @@ from imblearn.under_sampling import ClusterCentroids
 from imblearn.combine import SMOTETomek, SMOTEENN
 from collections import Counter
 
-def generate_interaction_sample(index_words, seq_dict, emo_dict, val=False):
+def generate_interaction_sample(index_words, seq_dict, emo_dict, only_four, val=False):
     """ 
     Generate interaction training pairs,
     total 4 class, total 5531 emo samples."""
@@ -23,7 +23,7 @@ def generate_interaction_sample(index_words, seq_dict, emo_dict, val=False):
     opposite_dist = []
     self_emo_shift = []
     for index, center in enumerate(index_words):
-        if True:
+        if (only_four and emo_dict[center] in emo) or only_four == False:
             if emo_dict[center] in emo:
                 four_type_utt_list.append(center)
             center_.append(center)
@@ -64,7 +64,7 @@ def generate_interaction_sample(index_words, seq_dict, emo_dict, val=False):
 
     return center_, target_, opposite_, center_label, target_label, opposite_label, target_dist, opposite_dist, self_emo_shift
 
-def generate_interaction_data(dialog_dict, seq_dict, emo_dict, val_set, mode='context'):
+def generate_interaction_data(dialog_dict, seq_dict, emo_dict, val_set, mode='context', only_four=False):
     """Generate training/testing data (emo_train.csv & emo_test.csv) under specific modes.
     
     Args:
@@ -81,7 +81,7 @@ def generate_interaction_data(dialog_dict, seq_dict, emo_dict, val_set, mode='co
         dialog_order = dialog_dict[k]
         # training set
         if val_set not in k:
-            c, t, o, cl, tl, ol, td, od, ses = generator(dialog_order, seq_dict, emo_dict)
+            c, t, o, cl, tl, ol, td, od, ses = generator(dialog_order, seq_dict, emo_dict, only_four)
             center_train += c
             target_train += t
             opposite_train += o
@@ -93,7 +93,7 @@ def generate_interaction_data(dialog_dict, seq_dict, emo_dict, val_set, mode='co
             self_emo_shift_train += ses
         # validation set
         else:
-            c, t, o, cl, tl, ol, td, od, ses = generator(dialog_order, seq_dict, emo_dict, val=True)
+            c, t, o, cl, tl, ol, td, od, ses = generator(dialog_order, seq_dict, emo_dict, only_four, val=True)
             center_val += c
             target_val += t
             opposite_val += o
@@ -192,7 +192,7 @@ if __name__ == "__main__":
     emo_all_dict = joblib.load('./data/emo_all.pkl')
     
     # dialog order
-    dialog_dict = joblib.load('./data/dialog.pkl')
+    dialog_dict = joblib.load('./data/dialog_rearrange.pkl')
     
     val = ['Ses01', 'Ses02', 'Ses03', 'Ses04', 'Ses05']
     utt_emo_shift_dict = {}
@@ -208,19 +208,19 @@ if __name__ == "__main__":
         emo_train = pd.read_csv('./data/emo_train.csv')
         emo_test = pd.read_csv('./data/emo_test.csv')
         break
-    joblib.dump(utt_emo_shift_dict, './data/emo_shift_all.pkl')
+    joblib.dump(utt_emo_shift_dict, './data/emo_shift_all_rearrange.pkl')
 
     for val_ in val:
         train_X, train_Y = [], []
         test_utt_name = []
 
         # generate training data/val data
-        generate_interaction_data(dialog_dict, feat_pooled, emo_all_dict, val_set=val_)
+        generate_interaction_data(dialog_dict, feat_pooled, emo_all_dict, val_set=val_, only_four=True)
         emo_train = pd.read_csv('./data/emo_train.csv')
         gen_train_val_test(emo_train, train_X, train_Y)
         counter = Counter(train_Y)
-        utt_emo_shift_dict = joblib.load('./data/emo_shift_all.pkl')
+        utt_emo_shift_dict = joblib.load('./data/emo_shift_all_rearrange.pkl')
         utt_emo_shift_dict['fold'+val_[-1]+'_0'] = counter[0]
         utt_emo_shift_dict['fold'+val_[-1]+'_1'] = counter[1]
-        joblib.dump(utt_emo_shift_dict, './data/emo_shift_all.pkl')
+        joblib.dump(utt_emo_shift_dict, './data/emo_shift_all_rearrange.pkl')
         
