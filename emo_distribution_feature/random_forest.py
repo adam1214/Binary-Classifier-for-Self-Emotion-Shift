@@ -1,29 +1,14 @@
 import joblib
+from sklearn import ensemble
 import numpy as np
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
-from sklearn.svm import SVC
 import pandas as pd
 import pdb
-from sklearn.metrics import confusion_matrix, recall_score, accuracy_score, precision_score
+from sklearn.metrics import confusion_matrix, accuracy_score, recall_score, precision_score
 from collections import Counter
-from imblearn.over_sampling import SMOTE, RandomOverSampler 
-from imblearn.under_sampling import ClusterCentroids
+from imblearn.over_sampling import SMOTE, RandomOverSampler
 from imblearn.combine import SMOTETomek, SMOTEENN
-import argparse
-from argparse import RawTextHelpFormatter
-
-'''
-import numpy as np
-from sklearn.pipeline import make_pipeline
-from sklearn.preprocessing import StandardScaler
-from sklearn.svm import SVC
-X = np.array([[-1, -1], [-2, -1], [1, 1], [2, 1]])
-y = np.array([1, 1, 2, 2])
-clf = make_pipeline(StandardScaler(), SVC(gamma='auto'))
-clf.fit(X, y)
-print(clf.predict([[-0.8, -1]]))
-'''
 
 def generate_interaction_sample(index_words, seq_dict, emo_dict, val=False):
     """ 
@@ -144,8 +129,7 @@ def gen_train_test_pair(data_frame, X, Y, test_utt_name=None):
         #oppo_utt_emo = emo_num_dict[row[5]]
         self_emo_shift = row[-1]
         
-        #X[-1].append(np.concatenate((center_utt_feat.flatten(), target_utt_feat.flatten(), oppo_utt_feat.flatten())))
-        X[-1].append(np.concatenate((target_utt_feat.flatten(), oppo_utt_feat.flatten())))
+        X[-1].append(np.concatenate((center_utt_feat.flatten(), target_utt_feat.flatten(), oppo_utt_feat.flatten())))
         if center_utt_name in four_type_utt_list:
             Y.append(self_emo_shift)
 
@@ -154,7 +138,7 @@ def gen_train_test_pair(data_frame, X, Y, test_utt_name=None):
         
 def upsampling(X, Y):
     counter = Counter(Y)
-    print(counter)
+    print(counter[0], counter[1])
     
     # transform the dataset
     #oversample = SMOTE(random_state=100, n_jobs=-1, sampling_strategy='auto', k_neighbors=5)
@@ -169,9 +153,6 @@ def upsampling(X, Y):
     return X_upsample, Y_upsample
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(formatter_class=RawTextHelpFormatter)
-    parser.add_argument('-r', "--random_num", type=int, help="select random number?", default=100)
-    args = parser.parse_args()
     # dimension of each utterance: (n, 45)
     # n:number of time frames in the utterance
     emo_num_dict = {'ang': 0, 'hap': 1, 'neu':2, 'sad': 3, 'sur': 4, 'fru': 5, 'xxx': 6, 'oth': 7, 'fea': 8, 'dis': 9, 'pad': 10}
@@ -181,7 +162,7 @@ if __name__ == "__main__":
     emo_all_dict = joblib.load('./data/emo_all.pkl')
     
     # dialog order
-    dialog_dict = joblib.load('./data/dialog_rearrange.pkl')
+    dialog_dict = joblib.load('./data/dialog.pkl')
     
     val = ['Ses01', 'Ses02', 'Ses03', 'Ses04', 'Ses05']
     pred = []
@@ -204,8 +185,8 @@ if __name__ == "__main__":
         
         #train_X = np.array(train_X)
         #train_X = train_X.squeeze(1)
-        
-        clf = make_pipeline(SVC(kernel='rbf', random_state=args.random_num, probability=True))
+
+        clf = make_pipeline(ensemble.RandomForestClassifier(n_estimators = 100, random_state = 100, criterion='entropy', n_jobs=-1, max_features='log2'))
         clf.fit(X_upsample, Y_upsample)
         
         # testing
@@ -232,14 +213,4 @@ if __name__ == "__main__":
     print('precision (predcit label 1):', round(precision_score(gt, pred)*100, 2), '%')
     print(confusion_matrix(gt, pred))
 
-    joblib.dump(pred_prob_dict, './output/SVM_emo_shift_output.pkl')
-    
-    path = 'uar.txt'
-    f = open(path, 'a')
-    f.write(str(recall_score(gt, pred, average='macro')*100)+'\n')
-    f.close()
-    
-    path = 'precision.txt'
-    f = open(path, 'a')
-    f.write(str(precision_score(gt, pred)*100)+'\n')
-    f.close()
+    joblib.dump(pred_prob_dict, './output/RandomForest_emo_shift_output.pkl')

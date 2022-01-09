@@ -2,7 +2,7 @@ import joblib
 import numpy as np
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
-from sklearn.svm import SVC
+from sklearn.linear_model import LogisticRegression
 import pandas as pd
 import pdb
 from sklearn.metrics import confusion_matrix, recall_score, accuracy_score, precision_score
@@ -10,22 +10,9 @@ from collections import Counter
 from imblearn.over_sampling import SMOTE, RandomOverSampler 
 from imblearn.under_sampling import ClusterCentroids
 from imblearn.combine import SMOTETomek, SMOTEENN
-import argparse
-from argparse import RawTextHelpFormatter
+from collections import Counter
 
-'''
-import numpy as np
-from sklearn.pipeline import make_pipeline
-from sklearn.preprocessing import StandardScaler
-from sklearn.svm import SVC
-X = np.array([[-1, -1], [-2, -1], [1, 1], [2, 1]])
-y = np.array([1, 1, 2, 2])
-clf = make_pipeline(StandardScaler(), SVC(gamma='auto'))
-clf.fit(X, y)
-print(clf.predict([[-0.8, -1]]))
-'''
-
-def generate_interaction_sample(index_words, seq_dict, emo_dict, val=False):
+def generate_interaction_sample(index_words, seq_dict, emo_dict, only_four, val=False):
     """ 
     Generate interaction training pairs,
     total 4 class, total 5531 emo samples."""
@@ -36,7 +23,7 @@ def generate_interaction_sample(index_words, seq_dict, emo_dict, val=False):
     opposite_dist = []
     self_emo_shift = []
     for index, center in enumerate(index_words):
-        if emo_dict[center] in emo or val == True:
+        if (only_four and emo_dict[center] in emo) or only_four == False:
             if emo_dict[center] in emo:
                 four_type_utt_list.append(center)
             center_.append(center)
@@ -55,13 +42,16 @@ def generate_interaction_sample(index_words, seq_dict, emo_dict, val=False):
                 target_dist.append(index - index_words.index(pt[-1]))
                 if emo_dict[pt[-1]] == emo_dict[center]:
                     self_emo_shift.append(0)
+                    utt_emo_shift_dict[center] = '0'
                 else:
                     self_emo_shift.append(1)
+                    utt_emo_shift_dict[center] = '1'
             else:
                 target_.append('pad')
                 target_label.append('pad')
                 target_dist.append('None')
                 self_emo_shift.append(0)
+                utt_emo_shift_dict[center] = '0'
 
             if len(pp) != 0:
                 opposite_.append(pp[-1])
@@ -74,7 +64,7 @@ def generate_interaction_sample(index_words, seq_dict, emo_dict, val=False):
 
     return center_, target_, opposite_, center_label, target_label, opposite_label, target_dist, opposite_dist, self_emo_shift
 
-def generate_interaction_data(dialog_dict, seq_dict, emo_dict, val_set, mode='context'):
+def generate_interaction_data(dialog_dict, seq_dict, emo_dict, val_set, mode='context', only_four=False):
     """Generate training/testing data (emo_train.csv & emo_test.csv) under specific modes.
     
     Args:
@@ -91,7 +81,7 @@ def generate_interaction_data(dialog_dict, seq_dict, emo_dict, val_set, mode='co
         dialog_order = dialog_dict[k]
         # training set
         if val_set not in k:
-            c, t, o, cl, tl, ol, td, od, ses = generator(dialog_order, seq_dict, emo_dict)
+            c, t, o, cl, tl, ol, td, od, ses = generator(dialog_order, seq_dict, emo_dict, only_four)
             center_train += c
             target_train += t
             opposite_train += o
@@ -103,7 +93,7 @@ def generate_interaction_data(dialog_dict, seq_dict, emo_dict, val_set, mode='co
             self_emo_shift_train += ses
         # validation set
         else:
-            c, t, o, cl, tl, ol, td, od, ses = generator(dialog_order, seq_dict, emo_dict, val=True)
+            c, t, o, cl, tl, ol, td, od, ses = generator(dialog_order, seq_dict, emo_dict, only_four, val=True)
             center_val += c
             target_val += t
             opposite_val += o
@@ -144,8 +134,7 @@ def gen_train_test_pair(data_frame, X, Y, test_utt_name=None):
         #oppo_utt_emo = emo_num_dict[row[5]]
         self_emo_shift = row[-1]
         
-        #X[-1].append(np.concatenate((center_utt_feat.flatten(), target_utt_feat.flatten(), oppo_utt_feat.flatten())))
-        X[-1].append(np.concatenate((target_utt_feat.flatten(), oppo_utt_feat.flatten())))
+        X[-1].append(np.concatenate((center_utt_feat.flatten(), target_utt_feat.flatten(), oppo_utt_feat.flatten())))
         if center_utt_name in four_type_utt_list:
             Y.append(self_emo_shift)
 
@@ -153,8 +142,8 @@ def gen_train_test_pair(data_frame, X, Y, test_utt_name=None):
             test_utt_name.append(center_utt_name)
         
 def upsampling(X, Y):
-    counter = Counter(Y)
-    print(counter)
+    #counter = Counter(Y)
+    #print(counter)
     
     # transform the dataset
     #oversample = SMOTE(random_state=100, n_jobs=-1, sampling_strategy='auto', k_neighbors=5)
@@ -168,10 +157,32 @@ def upsampling(X, Y):
 
     return X_upsample, Y_upsample
 
+def gen_train_val_test(data_frame, X, Y, utt_name=None):
+    for index, row in data_frame.iterrows():
+        center_utt_name = row[0]
+        target_utt_name = row[1]
+        oppo_utt_name = row[2]
+        
+        center_utt_feat = feat_pooled[center_utt_name]
+        target_utt_feat = feat_pooled[target_utt_name]
+        oppo_utt_feat = feat_pooled[oppo_utt_name]
+        
+        #target_utt_emo = emo_num_dict[row[4]]
+        #oppo_utt_emo = emo_num_dict[row[5]]
+        self_emo_shift = row[-1]
+
+        if utt_name != None: # test & val
+            X.append([])
+            X[-1].append(np.concatenate((center_utt_feat.flatten(), target_utt_feat.flatten(), oppo_utt_feat.flatten())))
+            Y.append(self_emo_shift)
+            utt_name.append(center_utt_name)
+            
+        elif utt_name == None and center_utt_name in four_type_utt_list: # train (get four type utt only)
+            X.append([])
+            X[-1].append(np.concatenate((center_utt_feat.flatten(), target_utt_feat.flatten(), oppo_utt_feat.flatten())))
+            Y.append(self_emo_shift)
+
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(formatter_class=RawTextHelpFormatter)
-    parser.add_argument('-r', "--random_num", type=int, help="select random number?", default=100)
-    args = parser.parse_args()
     # dimension of each utterance: (n, 45)
     # n:number of time frames in the utterance
     emo_num_dict = {'ang': 0, 'hap': 1, 'neu':2, 'sad': 3, 'sur': 4, 'fru': 5, 'xxx': 6, 'oth': 7, 'fea': 8, 'dis': 9, 'pad': 10}
@@ -184,9 +195,7 @@ if __name__ == "__main__":
     dialog_dict = joblib.load('./data/dialog_rearrange.pkl')
     
     val = ['Ses01', 'Ses02', 'Ses03', 'Ses04', 'Ses05']
-    pred = []
-    gt = []
-    pred_prob_dict = {}
+    utt_emo_shift_dict = {}
     for val_ in val:
         four_type_utt_list = [] # len:5531
         print("################{}################".format(val_))
@@ -198,48 +207,20 @@ if __name__ == "__main__":
         generate_interaction_data(dialog_dict, feat_pooled, emo_all_dict, val_set=val_)
         emo_train = pd.read_csv('./data/emo_train.csv')
         emo_test = pd.read_csv('./data/emo_test.csv')
-        
-        gen_train_test_pair(emo_train, train_X, train_Y)
-        X_upsample, Y_upsample = upsampling(train_X, train_Y)
-        
-        #train_X = np.array(train_X)
-        #train_X = train_X.squeeze(1)
-        
-        clf = make_pipeline(SVC(kernel='rbf', random_state=args.random_num, probability=True))
-        clf.fit(X_upsample, Y_upsample)
-        
-        # testing
-        gen_train_test_pair(emo_test, test_X, test_Y, test_utt_name)
-        test_X = np.array(test_X)
-        test_X = test_X.squeeze(1)
-        #p = clf.predict(test_X)
-        pred_prob_np = clf.predict_proba(test_X)
-        p = []
-        
-        #pred += p.tolist()
-        gt += test_Y
-        for i, utt_name in enumerate(test_utt_name):
-            pred_prob_dict[utt_name] = pred_prob_np[i][1]
-            if utt_name in four_type_utt_list:
-                if pred_prob_np[i][1] > 0.5:
-                    p.append(1)
-                else:
-                    p.append(0)
-        pred += p
+        break
+    joblib.dump(utt_emo_shift_dict, './data/emo_shift_all_rearrange.pkl')
 
-    print('UAR:', round(recall_score(gt, pred, average='macro')*100, 2), '%')
-    #print('ACC:', round(accuracy_score(gt, pred)*100, 2), '%')
-    print('precision (predcit label 1):', round(precision_score(gt, pred)*100, 2), '%')
-    print(confusion_matrix(gt, pred))
+    for val_ in val:
+        train_X, train_Y = [], []
+        test_utt_name = []
 
-    joblib.dump(pred_prob_dict, './output/SVM_emo_shift_output.pkl')
-    
-    path = 'uar.txt'
-    f = open(path, 'a')
-    f.write(str(recall_score(gt, pred, average='macro')*100)+'\n')
-    f.close()
-    
-    path = 'precision.txt'
-    f = open(path, 'a')
-    f.write(str(precision_score(gt, pred)*100)+'\n')
-    f.close()
+        # generate training data/val data
+        generate_interaction_data(dialog_dict, feat_pooled, emo_all_dict, val_set=val_, only_four=True)
+        emo_train = pd.read_csv('./data/emo_train.csv')
+        gen_train_val_test(emo_train, train_X, train_Y)
+        counter = Counter(train_Y)
+        utt_emo_shift_dict = joblib.load('./data/emo_shift_all_rearrange.pkl')
+        utt_emo_shift_dict['fold'+val_[-1]+'_0'] = counter[0]
+        utt_emo_shift_dict['fold'+val_[-1]+'_1'] = counter[1]
+        joblib.dump(utt_emo_shift_dict, './data/emo_shift_all_rearrange.pkl')
+        
