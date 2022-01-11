@@ -5,25 +5,14 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.svm import SVC
 import pandas as pd
 import pdb
-from sklearn.metrics import confusion_matrix, recall_score, accuracy_score, precision_score
+from sklearn.metrics import confusion_matrix, recall_score, accuracy_score, precision_score, make_scorer
+from sklearn.model_selection import RandomizedSearchCV
 from collections import Counter
 from imblearn.over_sampling import SMOTE, RandomOverSampler 
 from imblearn.under_sampling import ClusterCentroids
 from imblearn.combine import SMOTETomek, SMOTEENN
 import argparse
 from argparse import RawTextHelpFormatter
-
-'''
-import numpy as np
-from sklearn.pipeline import make_pipeline
-from sklearn.preprocessing import StandardScaler
-from sklearn.svm import SVC
-X = np.array([[-1, -1], [-2, -1], [1, 1], [2, 1]])
-y = np.array([1, 1, 2, 2])
-clf = make_pipeline(StandardScaler(), SVC(gamma='auto'))
-clf.fit(X, y)
-print(clf.predict([[-0.8, -1]]))
-'''
 
 def generate_interaction_sample(index_words, seq_dict, emo_dict, val=False):
     """ 
@@ -168,6 +157,10 @@ def upsampling(X, Y):
 
     return X_upsample, Y_upsample
 
+def my_custom_score(y_true, y_pred):
+    UAR = recall_score(y_true, y_pred, average='macro')
+    return UAR
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(formatter_class=RawTextHelpFormatter)
     parser.add_argument('-r', "--random_num", type=int, help="select random number?", default=100)
@@ -204,15 +197,33 @@ if __name__ == "__main__":
         
         #train_X = np.array(train_X)
         #train_X = train_X.squeeze(1)
-        
+        '''
+        clf = SVC(random_state=123, probability=True)
+        scorer = make_scorer(my_custom_score, greater_is_better=True)
+        params_space = {
+            'C': [0.1, 0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0, 5.5],
+            'kernel': ['linear', 'poly', 'rbf', 'sigmoid'], 
+            'degree': [3, 4, 5],
+            'gamma': ['scale', 'auto'],
+            'coef0': [-3, -2.5, -2, -1.5, -1, -0.5, 0.0, 0.5, 1.0, 1.5, 2.0, 2.5, 3.0],
+            'shrinking': [True, False],
+            'tol': [1e-5, 1e-4, 1e-3, 1e-2, 1e-1],
+            'decision_function_shape': ['ovo', 'ovr'],
+            'break_ties': [True, False]
+        }
+        s_CV = RandomizedSearchCV(clf, params_space, cv=5, verbose=1, n_jobs=-1, n_iter=20, scoring=scorer, refit=True, random_state=123)
+        s_CV.fit(X_upsample, Y_upsample)
+        CV_result = s_CV.cv_results_
+        best_clf = s_CV.best_estimator_
+        '''
         clf = make_pipeline(SVC(kernel='rbf', random_state=args.random_num, probability=True))
         clf.fit(X_upsample, Y_upsample)
-        
         # testing
         gen_train_test_pair(emo_test, test_X, test_Y, test_utt_name)
         test_X = np.array(test_X)
         test_X = test_X.squeeze(1)
         #p = clf.predict(test_X)
+        #pred_prob_np = best_clf.predict_proba(test_X)
         pred_prob_np = clf.predict_proba(test_X)
         p = []
         

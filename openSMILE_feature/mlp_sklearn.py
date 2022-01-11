@@ -5,7 +5,8 @@ from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 import pandas as pd
 import pdb
-from sklearn.metrics import confusion_matrix, accuracy_score, recall_score, precision_score
+from sklearn.metrics import confusion_matrix, accuracy_score, recall_score, precision_score, make_scorer
+from sklearn.model_selection import RandomizedSearchCV
 from collections import Counter
 from imblearn.over_sampling import SMOTE, RandomOverSampler
 from imblearn.combine import SMOTETomek, SMOTEENN
@@ -152,6 +153,10 @@ def upsampling(X, Y):
     
     return X_upsample, Y_upsample
 
+def my_custom_score(y_true, y_pred):
+    UAR = recall_score(y_true, y_pred, average='macro')
+    return UAR
+
 if __name__ == "__main__":
     # dimension of each utterance: (n, 45)
     # n:number of time frames in the utterance
@@ -162,7 +167,7 @@ if __name__ == "__main__":
     emo_all_dict = joblib.load('./data/emo_all.pkl')
     
     # dialog order
-    dialog_dict = joblib.load('./data/dialog.pkl')
+    dialog_dict = joblib.load('./data/dialog_rearrange.pkl')
     
     val = ['Ses01', 'Ses02', 'Ses03', 'Ses04', 'Ses05']
     pred = []
@@ -185,15 +190,42 @@ if __name__ == "__main__":
         
         #train_X = np.array(train_X)
         #train_X = train_X.squeeze(1)
-        
+        '''
+        clf = MLPClassifier(random_state=123, hidden_layer_sizes=(32,16,2))
+        scorer = make_scorer(my_custom_score, greater_is_better=True)
+        params_space = {
+            'activation': ['identity', 'logistic', 'tanh', 'relu'],
+            'solver': ['lbfgs', 'sgd', 'adam'],
+            'alpha': [0.1, 0.01, 0.001, 0.0001],
+            'batch_size': ['auto', 16, 32],
+            'learning_rate': ['constant', 'invscaling', 'adaptive'],
+            'learning_rate_init': [0.001, 0.01],
+            'power_t': [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9], 
+            'max_iter': [100, 200, 300, 400, 500, 600, 700, 800, 900, 1000],
+            'shuffle': [True, False],
+            'tol': [1e-5, 1e-4, 1e-3, 1e-2, 1e-1],
+            'warm_start': [True, False],
+            'momentum': [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9],
+            'nesterovs_momentum': [True, False],
+            'early_stopping': [True, False],
+            'validation_fraction': [0.1, 0.2, 0.3, 0.4, 0.5],
+            'beta_1': [0.7, 0.8, 0.9],
+            'beta_2': [0.777, 0.888, 0.999],
+            'epsilon': [1e-7, 1e-8, 1e-9]
+        }
+        s_CV = RandomizedSearchCV(clf, params_space, cv=5, verbose=1, n_jobs=-1, n_iter=100, scoring=scorer, refit=True, random_state=123)
+        s_CV.fit(X_upsample, Y_upsample)
+        CV_result = s_CV.cv_results_
+        best_clf = s_CV.best_estimator_
+        '''
         clf = make_pipeline(MLPClassifier(random_state=1, max_iter=1000, activation='relu', hidden_layer_sizes=(32,16,2), solver='adam'))
         clf.fit(X_upsample, Y_upsample)
-        
         # testing
         gen_train_test_pair(emo_test, test_X, test_Y, test_utt_name)
         test_X = np.array(test_X)
         test_X = test_X.squeeze(1)
         #p = clf.predict(test_X)
+        #pred_prob_np = best_clf.predict_proba(test_X)
         pred_prob_np = clf.predict_proba(test_X)
         p = []
         

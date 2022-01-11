@@ -58,17 +58,17 @@ class testData(Dataset):
 class binaryClassification(nn.Module):
     def __init__(self):
         super(binaryClassification, self).__init__()
-        # Number of input features is 270.
-        self.layer_1 = nn.Linear(270, 64) 
-        self.layer_2 = nn.Linear(64, 32)
-        self.layer_3 = nn.Linear(32, 16)
-        self.layer_out = nn.Linear(16, 1) 
+        # Number of input features is 12.
+        self.layer_1 = nn.Linear(12, 32)
+        self.layer_2 = nn.Linear(32, 16)
+        self.layer_3 = nn.Linear(16, 8)
+        self.layer_out = nn.Linear(8, 1) 
         
         self.relu = nn.ReLU()
-        self.dropout = nn.Dropout(p=0.3)
-        self.batchnorm1 = nn.BatchNorm1d(64)
-        self.batchnorm2 = nn.BatchNorm1d(32)
-        self.batchnorm3 = nn.BatchNorm1d(16)
+        self.dropout = nn.Dropout(p=0.1)
+        self.batchnorm1 = nn.BatchNorm1d(32)
+        self.batchnorm2 = nn.BatchNorm1d(16)
+        self.batchnorm3 = nn.BatchNorm1d(8)
         
     def forward(self, inputs):
         x = self.relu(self.layer_1(inputs))
@@ -227,7 +227,7 @@ def gen_train_val_test(data_frame, X, Y, utt_name=None):
 
         if utt_name != None: # test & val
             X.append([])
-            X[-1].append(np.concatenate((center_utt_feat.flatten(), target_utt_feat.flatten(), oppo_utt_feat.flatten())))
+            X[-1].append(np.concatenate((center_utt_feat, target_utt_feat, oppo_utt_feat)))
             Y.append(self_emo_shift)
             utt_name.append(center_utt_name)
             
@@ -262,7 +262,7 @@ def model_pred_and_gt(y_pred_list, y_gt_list, loader, model, pred_prob_dict=None
 
 if __name__ == "__main__":
     BATCH_SIZE = 32
-    LEARNING_RATE = 0.00005
+    LEARNING_RATE = 0.0001
     WEIGHT_DECAY = 0.01
     EPOCH = 100
     # dimension of each utterance: (n, 45)
@@ -270,7 +270,9 @@ if __name__ == "__main__":
     torch.manual_seed(100)
     
     emo_num_dict = {'ang': 0, 'hap': 1, 'neu':2, 'sad': 3, 'sur': 4, 'fru': 5, 'xxx': 6, 'oth': 7, 'fea': 8, 'dis': 9, 'pad': 10}
-    feat_pooled = joblib.load('./data/feat_preprocessing.pkl')
+    feat_pooled = joblib.load('./data/rearrange_single_outputs_iaan.pkl')
+    #feat_pooled = joblib.load('./data/dag_outputs_4_all_fold_single_rearrange.pkl')
+    feat_pooled['pad'] = np.array([0, 0, 0, 0], dtype=np.float32)
     
     # label
     emo_all_dict = joblib.load('./data/emo_all.pkl')
@@ -293,8 +295,7 @@ if __name__ == "__main__":
         
         model = binaryClassification()
         model.to(device)
-        optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE, weight_decay=WEIGHT_DECAY)
-        
+        optimizer = optim.SGD(model.parameters(), lr=LEARNING_RATE, weight_decay=WEIGHT_DECAY, momentum=0.9)
         
         # generate training data/ val data/ test data
         generate_interaction_data(dialog_dict, feat_pooled, emo_all_dict, test_set=test_, val_set=val_)

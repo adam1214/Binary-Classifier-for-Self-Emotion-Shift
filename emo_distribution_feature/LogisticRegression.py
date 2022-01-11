@@ -5,7 +5,8 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.linear_model import LogisticRegression
 import pandas as pd
 import pdb
-from sklearn.metrics import confusion_matrix, recall_score, accuracy_score, precision_score
+from sklearn.metrics import confusion_matrix, recall_score, accuracy_score, precision_score, make_scorer
+from sklearn.model_selection import RandomizedSearchCV
 from collections import Counter
 from imblearn.over_sampling import SMOTE, RandomOverSampler 
 from imblearn.under_sampling import ClusterCentroids
@@ -130,7 +131,7 @@ def gen_train_test_pair(data_frame, X, Y, test_utt_name=None):
         #oppo_utt_emo = emo_num_dict[row[5]]
         self_emo_shift = row[-1]
         
-        X[-1].append(np.concatenate((center_utt_feat.flatten(), target_utt_feat.flatten(), oppo_utt_feat.flatten())))
+        X[-1].append(np.concatenate((center_utt_feat, target_utt_feat, oppo_utt_feat)))
         if center_utt_name in four_type_utt_list:
             Y.append(self_emo_shift)
 
@@ -153,17 +154,23 @@ def upsampling(X, Y):
 
     return X_upsample, Y_upsample
 
+def my_custom_score(y_true, y_pred):
+    UAR = recall_score(y_true, y_pred, average='macro')
+    return UAR
+
 if __name__ == "__main__":
     # dimension of each utterance: (n, 45)
     # n:number of time frames in the utterance
     emo_num_dict = {'ang': 0, 'hap': 1, 'neu':2, 'sad': 3, 'sur': 4, 'fru': 5, 'xxx': 6, 'oth': 7, 'fea': 8, 'dis': 9, 'pad': 10}
-    feat_pooled = joblib.load('./data/feat_preprocessing.pkl')
+    feat_pooled = joblib.load('./data/rearrange_single_outputs_iaan.pkl')
+    #feat_pooled = joblib.load('./data/dag_outputs_4_all_fold_single_rearrange.pkl')
+    feat_pooled['pad'] = np.array([0, 0, 0, 0], dtype=np.float32)
     
     # label
     emo_all_dict = joblib.load('./data/emo_all.pkl')
     
     # dialog order
-    dialog_dict = joblib.load('./data/dialog.pkl')
+    dialog_dict = joblib.load('./data/dialog_rearrange.pkl')
     
     val = ['Ses01', 'Ses02', 'Ses03', 'Ses04', 'Ses05']
     pred = []
@@ -188,15 +195,34 @@ if __name__ == "__main__":
         train_X = train_X.squeeze(1)
         
         counter = Counter(train_Y)
+        '''
+        clf = LogisticRegression(random_state=100, n_jobs = -1, class_weight= {0: 1/counter[0], 1: 1/counter[1]})
+        scorer = make_scorer(my_custom_score, greater_is_better=True)
+        params_space = {
+            'penalty': ['l1', 'l2', 'elasticnet', 'none'],
+            'dual': [True, False],
+            'tol': [1e-5, 1e-4, 1e-3, 1e-2, 1e-1],
+            'C': [0.1, 0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0, 5.5],
+            'fit_intercept': [True, False],
+            'intercept_scaling': [1.0 ,2.0, 3.0, 4.0, 5.0],
+            'solver': ['newton-cg', 'lbfgs', 'liblinear', 'sag', 'saga'],
+            'multi_class': ['auto', 'ovr', 'multinomial'],
+            'warm_start': [True, False],
+            'l1_ratio': [None, 0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
+        }
+        s_CV = RandomizedSearchCV(clf, params_space, cv=5, verbose=1, n_jobs=-1, n_iter=100, scoring=scorer, refit=True, random_state=123)
+        s_CV.fit(train_X, train_Y)
+        CV_result = s_CV.cv_results_
+        best_clf = s_CV.best_estimator_
+        '''
         clf = make_pipeline(LogisticRegression(random_state=100, max_iter=1000, multi_class = 'multinomial', n_jobs = -1, class_weight= {0: 1/counter[0], 1: 1/counter[1]}))
-        #clf.fit(X_upsample, Y_upsample)
         clf.fit(train_X, train_Y)
-        
         # testing
         gen_train_test_pair(emo_test, test_X, test_Y, test_utt_name)
         test_X = np.array(test_X)
         test_X = test_X.squeeze(1)
         #p = clf.predict(test_X)
+        #pred_prob_np = best_clf.predict_proba(test_X)
         pred_prob_np = clf.predict_proba(test_X)
         p = []
         

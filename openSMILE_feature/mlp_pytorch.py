@@ -276,7 +276,7 @@ if __name__ == "__main__":
     emo_all_dict = joblib.load('./data/emo_all.pkl')
     
     # dialog order
-    dialog_dict = joblib.load('./data/dialog.pkl')
+    dialog_dict = joblib.load('./data/dialog_rearrange.pkl')
     
     test = ['Ses01', 'Ses02', 'Ses03', 'Ses04', 'Ses05']
     val = ['Ses02', 'Ses03', 'Ses01', 'Ses05', 'Ses04']
