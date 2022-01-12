@@ -192,7 +192,8 @@ if __name__ == "__main__":
     emo_all_dict = joblib.load('./data/emo_all.pkl')
     
     # dialog order
-    dialog_dict = joblib.load('./data/dialog_rearrange.pkl')
+    #dialog_dict = joblib.load('./data/dialog_rearrange.pkl')
+    dialog_dict = joblib.load('./data/dialog_rearrange_4emo_iemocap.pkl')
     
     val = ['Ses01', 'Ses02', 'Ses03', 'Ses04', 'Ses05']
     utt_emo_shift_dict = {}
@@ -208,7 +209,7 @@ if __name__ == "__main__":
         emo_train = pd.read_csv('./data/emo_train.csv')
         emo_test = pd.read_csv('./data/emo_test.csv')
         break
-    joblib.dump(utt_emo_shift_dict, './data/emo_shift_all_rearrange.pkl')
+    joblib.dump(utt_emo_shift_dict, './data/4emo_shift_all_rearrange.pkl')
 
     for val_ in val:
         train_X, train_Y = [], []
