@@ -11,7 +11,7 @@ for k in iaan_emo_shift_output:
             preds.append(1)
         else:
             preds.append(0)
-        gts.append(int(emo_shift_all[k]))
+        gts.append(emo_shift_all[k])
 
 print('UAR =', round(recall_score(gts, preds, average='macro')*100, 2), '%')
 print('precision =', round(precision_score(gts, preds)*100, 2), '%')
