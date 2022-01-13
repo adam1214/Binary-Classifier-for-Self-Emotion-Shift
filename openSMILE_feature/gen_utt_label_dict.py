@@ -220,8 +220,8 @@ if __name__ == "__main__":
         emo_train = pd.read_csv('./data/emo_train.csv')
         gen_train_val_test(emo_train, train_X, train_Y)
         counter = Counter(train_Y)
-        utt_emo_shift_dict = joblib.load('./data/emo_shift_all_rearrange.pkl')
+        utt_emo_shift_dict = joblib.load('./data/4emo_shift_all_rearrange.pkl')
         utt_emo_shift_dict['fold'+val_[-1]+'_0'] = counter[0]
         utt_emo_shift_dict['fold'+val_[-1]+'_1'] = counter[1]
-        joblib.dump(utt_emo_shift_dict, './data/emo_shift_all_rearrange.pkl')
+        joblib.dump(utt_emo_shift_dict, './data/4emo_shift_all_rearrange.pkl')
         

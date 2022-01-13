@@ -237,10 +237,16 @@ def gen_train_val_test(data_frame, X, Y, utt_name=None):
             Y.append(self_emo_shift)
 
 def model_pred_and_gt(y_pred_list, y_gt_list, loader, model, pred_prob_dict=None):
+    global epoch_loss_val
     with torch.no_grad():
         for X_batch, y_batch, utt_name in loader: # X_batch.shape = (32, 270), y_batch.shape = ([32])
             X_batch, y_batch = X_batch.to(device), y_batch.to(device)
             y_pred = model(X_batch)
+            
+            if pred_prob_dict == None: # when validation
+                loss = criterion(y_pred, y_batch.unsqueeze(1).float())
+                epoch_loss_val += loss.item()
+                
             y_pred = torch.sigmoid(y_pred) # (32, 1)
             y_pred_tag = torch.round(y_pred).long() # (32, 1)
             
@@ -330,11 +336,14 @@ if __name__ == "__main__":
         # training
         val_uar_list = []
         max_val_uar = 0
+        min_val_loss = 10000000.
         best_epoch = 0
         for e in range(1, EPOCH+1, 1):
             model.train()
-            epoch_loss = 0
-            epoch_uar = 0
+            epoch_loss_train = 0
+            epoch_loss_val = 0
+            epoch_uar_train = 0
+            
             for X_batch, y_batch in train_loader:
                 X_batch, y_batch = X_batch.to(device), y_batch.to(device)
                 optimizer.zero_grad()
@@ -347,8 +356,8 @@ if __name__ == "__main__":
                 loss.backward()
                 optimizer.step()
                 
-                epoch_loss += loss.item()
-                epoch_uar += uar.item()
+                epoch_loss_train += loss.item()
+                epoch_uar_train += uar.item()
                 
             # validation
             y_pred_list_validation = []
@@ -357,12 +366,20 @@ if __name__ == "__main__":
             model_pred_and_gt(y_pred_list_validation, y_gt_list_validation, val_loader, model)
             val_uar = recall_score(y_gt_list_validation, y_pred_list_validation, average='macro')*100
             val_uar_list.append(val_uar)
+            
             if val_uar > max_val_uar:
                 max_val_uar = val_uar
                 best_epoch = e
                 checkpoint = {'epoch': e, 'model_state_dict': model.state_dict(), 'optimizer_state_dict': optimizer.state_dict(), 'loss': loss}
                 torch.save(checkpoint, './model/mlp_pytorch_best_model.pth')
-            print(f'Epoch {e+0:03}: | Loss: {epoch_loss/len(train_loader):.5f} | train_uar: {epoch_uar/len(train_loader):.3f} | val_uar: {val_uar:.2f}')
+            '''
+            if min_val_loss > epoch_loss_val or e == 1:
+                min_val_loss = epoch_loss_val
+                best_epoch = e
+                checkpoint = {'epoch': e, 'model_state_dict': model.state_dict(), 'optimizer_state_dict': optimizer.state_dict(), 'loss': loss}
+                torch.save(checkpoint, './model/mlp_pytorch_best_model.pth')
+            '''
+            print(f'Epoch {e+0:03}: | Train Loss: {epoch_loss_train/len(train_loader):.5f} | Train UAR: {epoch_uar_train/len(train_loader):.3f} | Val Loss: {epoch_loss_val/len(val_loader):.5f} | Val UAR: {val_uar:.2f}')
             print(confusion_matrix(y_gt_list_validation, y_pred_list_validation))
         print('The best epoch:', best_epoch)
 
@@ -373,7 +390,7 @@ if __name__ == "__main__":
         checkpoint = torch.load('./model/mlp_pytorch_best_model.pth')
         model.load_state_dict(checkpoint['model_state_dict'])
         model.eval()
-        model_pred_and_gt(pred, gt, test_loader, model, pred_prob_dict)
+        model_pred_and_gt(pred, gt, test_loader, model, pred_prob_dict=pred_prob_dict)
         
     print('UAR:', round(recall_score(gt, pred, average='macro')*100, 2), '%')
     #print('ACC:', round(accuracy_score(gt, pred)*100, 2), '%')
