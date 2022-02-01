@@ -13,6 +13,23 @@ from imblearn.under_sampling import ClusterCentroids
 from imblearn.combine import SMOTETomek, SMOTEENN
 import argparse
 from argparse import RawTextHelpFormatter
+from sklearn.metrics.pairwise import cosine_similarity
+import scipy.stats
+
+def softmax(x):
+    f_x = np.exp(x) / np.sum(np.exp(x))
+    return f_x
+
+def cal_cosine_similarity(center_logits, target_logits, dim): # 0~1
+    return cosine_similarity(center_logits.reshape(1, dim), target_logits.reshape(1, dim))[0][0]
+
+def cal_kl_divergence(center_logits, target_logits): # 0~inf
+    center_probs = softmax(center_logits)
+    target_probs = softmax(target_logits)
+    return scipy.stats.entropy(center_probs, target_probs) 
+
+def cal_earth_mover_dist(center_logits, target_logits): # 0~inf
+    return scipy.stats.wasserstein_distance(center_logits, target_logits)
 
 def generate_interaction_sample(index_words, seq_dict, emo_dict, val=False):
     """ 
@@ -133,8 +150,36 @@ def gen_train_test_pair(data_frame, X, Y, test_utt_name=None):
         #oppo_utt_emo = emo_num_dict[row[5]]
         self_emo_shift = row[-1]
         
+        hc_hp_cos_sim = cal_cosine_similarity(center_logits=utt_hc[center_utt_name], target_logits=utt_hp[target_utt_name], dim=512)
+        hc_hp_kl_div = cal_kl_divergence(center_logits=utt_hc[center_utt_name], target_logits=utt_hp[target_utt_name])
+        hc_hp_earth_mover_dist = cal_earth_mover_dist(center_logits=utt_hc[center_utt_name], target_logits=utt_hp[target_utt_name])
+        
+        hc_hr_cos_sim = cal_cosine_similarity(center_logits=utt_hc[center_utt_name], target_logits=utt_hr[oppo_utt_name], dim=512)
+        hc_hr_kl_div = cal_kl_divergence(center_logits=utt_hc[center_utt_name], target_logits=utt_hr[oppo_utt_name])
+        hc_hr_earth_mover_dist = cal_earth_mover_dist(center_logits=utt_hc[center_utt_name], target_logits=utt_hr[oppo_utt_name])
+        
         #X[-1].append(np.concatenate((center_utt_feat.flatten(), target_utt_feat.flatten(), oppo_utt_feat.flatten())))
-        X[-1].append(np.concatenate((target_utt_feat.flatten(), oppo_utt_feat.flatten())))
+        if target_utt_name != 'pad':
+            Ec_Ep_cos_sim = cal_cosine_similarity(center_logits=emo_outputs[center_utt_name], target_logits=emo_outputs[target_utt_name], dim=4)
+            Ec_Ep_kl_div = cal_kl_divergence(center_logits=emo_outputs[center_utt_name], target_logits=emo_outputs[target_utt_name])
+            Ec_Ep_earth_mover_dist = cal_earth_mover_dist(center_logits=emo_outputs[center_utt_name], target_logits=emo_outputs[target_utt_name])
+        else:
+            Ec_Ep_cos_sim = 1
+            Ec_Ep_kl_div = 0
+            Ec_Ep_earth_mover_dist = 0
+            
+        if oppo_utt_name != 'pad':
+            Ec_Er_cos_sim = cal_cosine_similarity(center_logits=emo_outputs[center_utt_name], target_logits=emo_outputs[oppo_utt_name], dim=4)
+            Ec_Er_kl_div = cal_kl_divergence(center_logits=emo_outputs[center_utt_name], target_logits=emo_outputs[oppo_utt_name])
+            Ec_Er_earth_mover_dist = cal_earth_mover_dist(center_logits=emo_outputs[center_utt_name], target_logits=emo_outputs[oppo_utt_name])
+        else:
+            Ec_Er_cos_sim = 1
+            Ec_Er_kl_div = 0
+            Ec_Er_earth_mover_dist = 0
+            
+        #X[-1].append(np.concatenate((target_utt_feat.flatten(), oppo_utt_feat.flatten())))
+        #X[-1].append([cos_sim, kl_div, earth_mover_dist])
+        X[-1].append(np.concatenate([np.array([Ec_Ep_cos_sim, Ec_Ep_kl_div, Ec_Ep_earth_mover_dist, Ec_Er_cos_sim, Ec_Er_kl_div, Ec_Er_earth_mover_dist, hc_hp_cos_sim, hc_hp_kl_div, hc_hp_earth_mover_dist, hc_hr_cos_sim, hc_hr_kl_div, hc_hr_earth_mover_dist])]))
         if center_utt_name in four_type_utt_list:
             Y.append(self_emo_shift)
 
@@ -172,6 +217,31 @@ if __name__ == "__main__":
     
     # label
     emo_all_dict = joblib.load('./data/emo_all.pkl')
+    emo_shift_all_dict = joblib.load('./data/4emo_shift_all_rearrange.pkl')
+    #emo_outputs = joblib.load('./data/dag_outputs_4_all_fold_single_rearrange.pkl')
+    utt_logits_outputs_fold1 = joblib.load('./data/original_iaan/utt_logits_outputs_fold1.pkl')
+    utt_logits_outputs_fold2 = joblib.load('./data/original_iaan/utt_logits_outputs_fold2.pkl')
+    utt_logits_outputs_fold3 = joblib.load('./data/original_iaan/utt_logits_outputs_fold3.pkl')
+    utt_logits_outputs_fold4 = joblib.load('./data/original_iaan/utt_logits_outputs_fold4.pkl')
+    utt_logits_outputs_fold5 = joblib.load('./data/original_iaan/utt_logits_outputs_fold5.pkl')
+    
+    utt_hc_fold1 = joblib.load('./data/original_iaan/utt_hc_fold1.pkl')
+    utt_hc_fold2 = joblib.load('./data/original_iaan/utt_hc_fold2.pkl')
+    utt_hc_fold3 = joblib.load('./data/original_iaan/utt_hc_fold3.pkl')
+    utt_hc_fold4 = joblib.load('./data/original_iaan/utt_hc_fold4.pkl')
+    utt_hc_fold5 = joblib.load('./data/original_iaan/utt_hc_fold5.pkl')
+    
+    utt_hp_fold1 = joblib.load('./data/original_iaan/utt_hp_fold1.pkl')
+    utt_hp_fold2 = joblib.load('./data/original_iaan/utt_hp_fold2.pkl')
+    utt_hp_fold3 = joblib.load('./data/original_iaan/utt_hp_fold3.pkl')
+    utt_hp_fold4 = joblib.load('./data/original_iaan/utt_hp_fold4.pkl')
+    utt_hp_fold5 = joblib.load('./data/original_iaan/utt_hp_fold5.pkl')
+    
+    utt_hr_fold1 = joblib.load('./data/original_iaan/utt_hr_fold1.pkl')
+    utt_hr_fold2 = joblib.load('./data/original_iaan/utt_hr_fold2.pkl')
+    utt_hr_fold3 = joblib.load('./data/original_iaan/utt_hr_fold3.pkl')
+    utt_hr_fold4 = joblib.load('./data/original_iaan/utt_hr_fold4.pkl')
+    utt_hr_fold5 = joblib.load('./data/original_iaan/utt_hr_fold5.pkl')
     
     # dialog order
     #dialog_dict = joblib.load('./data/dialog_rearrange.pkl')
@@ -182,6 +252,33 @@ if __name__ == "__main__":
     gt = []
     pred_prob_dict = {}
     for val_ in val:
+        if val_ == 'Ses01':
+            emo_outputs = utt_logits_outputs_fold1
+            utt_hc = utt_hc_fold1
+            utt_hp = utt_hp_fold1
+            utt_hr = utt_hr_fold1
+        elif val_ == 'Ses02':
+            emo_outputs = utt_logits_outputs_fold2
+            utt_hc = utt_hc_fold2
+            utt_hp = utt_hp_fold2
+            utt_hr = utt_hr_fold2
+        elif val_ == 'Ses03':
+            emo_outputs = utt_logits_outputs_fold3
+            utt_hc = utt_hc_fold3
+            utt_hp = utt_hp_fold3
+            utt_hr = utt_hr_fold3
+        elif val_ == 'Ses04':
+            emo_outputs = utt_logits_outputs_fold4
+            utt_hc = utt_hc_fold4
+            utt_hp = utt_hp_fold4
+            utt_hr = utt_hr_fold4
+        else:
+            emo_outputs = utt_logits_outputs_fold5
+            utt_hc = utt_hc_fold5
+            utt_hp = utt_hp_fold5
+            utt_hr = utt_hr_fold5
+        utt_hp['pad'] = np.zeros(512)
+        utt_hr['pad'] = np.zeros(512)
         four_type_utt_list = [] # len:5531
         print("################{}################".format(val_))
         
@@ -229,23 +326,24 @@ if __name__ == "__main__":
         p = []
         
         #pred += p.tolist()
-        gt += test_Y
+        #gt += test_Y
         for i, utt_name in enumerate(test_utt_name):
             pred_prob_dict[utt_name] = pred_prob_np[i][1]
             if utt_name in four_type_utt_list:
+                gt.append(emo_shift_all_dict[utt_name])
                 if pred_prob_np[i][1] > 0.5:
                     p.append(1)
                 else:
                     p.append(0)
         pred += p
 
+    print('## MODEL PERFORMANCE ##')
     print('UAR:', round(recall_score(gt, pred, average='macro')*100, 2), '%')
-    #print('ACC:', round(accuracy_score(gt, pred)*100, 2), '%')
-    print('precision (predcit label 1):', round(precision_score(gt, pred)*100, 2), '%')
+    print('UAR 2 type:', recall_score(gt, pred, average=None))
+    print('precision 2 type:', precision_score(gt, pred, average=None))
     print(confusion_matrix(gt, pred))
-
     joblib.dump(pred_prob_dict, './output/SVM_emo_shift_output.pkl')
-    
+    '''
     path = 'uar.txt'
     f = open(path, 'a')
     f.write(str(recall_score(gt, pred, average='macro')*100)+'\n')
@@ -255,3 +353,4 @@ if __name__ == "__main__":
     f = open(path, 'a')
     f.write(str(precision_score(gt, pred)*100)+'\n')
     f.close()
+    '''

@@ -14,16 +14,19 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import Dataset, DataLoader
 import warnings
+from sklearn.metrics.pairwise import cosine_similarity
+import scipy.stats
 warnings.filterwarnings('ignore')  # "error", "ignore", "always", "default", "module" or "once"
 
 class trainData(Dataset):
     
-    def __init__(self, X_data, y_data):
+    def __init__(self, X_data, y_data, utt_name):
         self.X_data = X_data
         self.y_data = y_data
+        self.utt_name = utt_name
         
     def __getitem__(self, index):
-        return self.X_data[index], self.y_data[index].long()
+        return self.X_data[index], self.y_data[index].long(), self.utt_name[index]
         
     def __len__ (self):
         return len(self.X_data)
@@ -59,29 +62,44 @@ class binaryClassification(nn.Module):
     def __init__(self):
         super(binaryClassification, self).__init__()
         # Number of input features is 270.
-        self.layer_1 = nn.Linear(270, 64) 
-        self.layer_2 = nn.Linear(64, 32)
-        self.layer_3 = nn.Linear(32, 16)
-        self.layer_out = nn.Linear(16, 1) 
+        self.layer_1 = nn.Linear(12, 20) 
+        #self.layer_2 = nn.Linear(10, 1)
+        #self.layer_3 = nn.Linear(32, 16)
+        self.layer_out = nn.Linear(20, 1) 
         
         self.relu = nn.ReLU()
-        self.dropout = nn.Dropout(p=0.3)
-        self.batchnorm1 = nn.BatchNorm1d(64)
-        self.batchnorm2 = nn.BatchNorm1d(32)
-        self.batchnorm3 = nn.BatchNorm1d(16)
+        #self.dropout = nn.Dropout(p=0.1)
+        self.batchnorm1 = nn.BatchNorm1d(20)
+        #self.batchnorm2 = nn.BatchNorm1d(32)
+        #self.batchnorm3 = nn.BatchNorm1d(16)
         
     def forward(self, inputs):
         x = self.relu(self.layer_1(inputs))
         x = self.batchnorm1(x)
-        x = self.relu(self.layer_2(x))
-        x = self.batchnorm2(x)
-        x = self.relu(self.layer_3(x))
-        x = self.batchnorm3(x)
-        x = self.dropout(x)
+        #x = self.relu(self.layer_2(x))
+        #x = self.batchnorm2(x)
+        #x = self.relu(self.layer_3(x))
+        #x = self.batchnorm3(x)
+        #x = self.dropout(x)
         x = self.layer_out(x)
         
         return x
-    
+
+def softmax(x):
+    f_x = np.exp(x) / np.sum(np.exp(x))
+    return f_x
+
+def cal_cosine_similarity(center_logits, target_logits, dim): # -1~1
+    return cosine_similarity(center_logits.reshape(1, dim), target_logits.reshape(1, dim))[0][0]
+
+def cal_kl_divergence(center_logits, target_logits): # 0~inf
+    center_probs = softmax(center_logits)
+    target_probs = softmax(target_logits)
+    return scipy.stats.entropy(center_probs, target_probs) 
+
+def cal_earth_mover_dist(center_logits, target_logits): # 0~inf
+    return scipy.stats.wasserstein_distance(center_logits, target_logits)
+
 def binary_uar(y_pred, y_test):
     y_pred_tag = torch.round(torch.sigmoid(y_pred))
     uar = round(recall_score(y_test.cpu(), y_pred_tag.long().cpu(), average='macro')*100, 2)
@@ -216,24 +234,52 @@ def gen_train_val_test(data_frame, X, Y, utt_name=None):
         center_utt_name = row[0]
         target_utt_name = row[1]
         oppo_utt_name = row[2]
-        
+        '''
         center_utt_feat = feat_pooled[center_utt_name]
         target_utt_feat = feat_pooled[target_utt_name]
         oppo_utt_feat = feat_pooled[oppo_utt_name]
-        
+        '''
         #target_utt_emo = emo_num_dict[row[4]]
         #oppo_utt_emo = emo_num_dict[row[5]]
         self_emo_shift = row[-1]
-
+        
+        hc_hp_cos_sim = cal_cosine_similarity(center_logits=utt_hc[center_utt_name], target_logits=utt_hp[target_utt_name], dim=512)
+        hc_hp_kl_div = cal_kl_divergence(center_logits=utt_hc[center_utt_name], target_logits=utt_hp[target_utt_name])
+        hc_hp_earth_mover_dist = cal_earth_mover_dist(center_logits=utt_hc[center_utt_name], target_logits=utt_hp[target_utt_name])
+        
+        hc_hr_cos_sim = cal_cosine_similarity(center_logits=utt_hc[center_utt_name], target_logits=utt_hr[oppo_utt_name], dim=512)
+        hc_hr_kl_div = cal_kl_divergence(center_logits=utt_hc[center_utt_name], target_logits=utt_hr[oppo_utt_name])
+        hc_hr_earth_mover_dist = cal_earth_mover_dist(center_logits=utt_hc[center_utt_name], target_logits=utt_hr[oppo_utt_name])
+        
+        if target_utt_name != 'pad':
+            Ec_Ep_cos_sim = cal_cosine_similarity(center_logits=emo_outputs[center_utt_name], target_logits=emo_outputs[target_utt_name], dim=4)
+            Ec_Ep_kl_div = cal_kl_divergence(center_logits=emo_outputs[center_utt_name], target_logits=emo_outputs[target_utt_name])
+            Ec_Ep_earth_mover_dist = cal_earth_mover_dist(center_logits=emo_outputs[center_utt_name], target_logits=emo_outputs[target_utt_name])
+        else:
+            Ec_Ep_cos_sim = 1
+            Ec_Ep_kl_div = 0
+            Ec_Ep_earth_mover_dist = 0
+            
+        if oppo_utt_name != 'pad':
+            Ec_Er_cos_sim = cal_cosine_similarity(center_logits=emo_outputs[center_utt_name], target_logits=emo_outputs[oppo_utt_name], dim=4)
+            Ec_Er_kl_div = cal_kl_divergence(center_logits=emo_outputs[center_utt_name], target_logits=emo_outputs[oppo_utt_name])
+            Ec_Er_earth_mover_dist = cal_earth_mover_dist(center_logits=emo_outputs[center_utt_name], target_logits=emo_outputs[oppo_utt_name])
+        else:
+            Ec_Er_cos_sim = 1
+            Ec_Er_kl_div = 0
+            Ec_Er_earth_mover_dist = 0
+        
         if utt_name != None: # test & val
             X.append([])
-            X[-1].append(np.concatenate((center_utt_feat.flatten(), target_utt_feat.flatten(), oppo_utt_feat.flatten())))
+            #X[-1].append(np.concatenate((center_utt_feat.flatten(), target_utt_feat.flatten(), oppo_utt_feat.flatten())))
+            X[-1].append(np.concatenate([np.array([Ec_Ep_cos_sim, Ec_Ep_kl_div, Ec_Ep_earth_mover_dist, Ec_Er_cos_sim, Ec_Er_kl_div, Ec_Er_earth_mover_dist, hc_hp_cos_sim, hc_hp_kl_div, hc_hp_earth_mover_dist, hc_hr_cos_sim, hc_hr_kl_div, hc_hr_earth_mover_dist])]))
             Y.append(self_emo_shift)
             utt_name.append(center_utt_name)
             
         elif utt_name == None and center_utt_name in four_type_utt_list: # train (get four type utt only)
             X.append([])
-            X[-1].append(np.concatenate((center_utt_feat.flatten(), target_utt_feat.flatten(), oppo_utt_feat.flatten())))
+            #X[-1].append(np.concatenate((center_utt_feat.flatten(), target_utt_feat.flatten(), oppo_utt_feat.flatten())))
+            X[-1].append(np.concatenate([np.array([Ec_Ep_cos_sim, Ec_Ep_kl_div, Ec_Ep_earth_mover_dist, Ec_Er_cos_sim, Ec_Er_kl_div, Ec_Er_earth_mover_dist, hc_hp_cos_sim, hc_hp_kl_div, hc_hp_earth_mover_dist, hc_hr_cos_sim, hc_hr_kl_div, hc_hr_earth_mover_dist])]))
             Y.append(self_emo_shift)
 
 def model_pred_and_gt(y_pred_list, y_gt_list, loader, model, pred_prob_dict=None):
@@ -251,7 +297,7 @@ def model_pred_and_gt(y_pred_list, y_gt_list, loader, model, pred_prob_dict=None
             y_pred_tag = torch.round(y_pred).long() # (32, 1)
             
             for i in range(0, len(utt_name), 1):
-                if utt_name[i] in four_type_utt_list:
+                if utt_name[i] in four_type_utt_list and y_pred_list != None:
                     y_pred_list.append((y_pred_tag.cpu())[i][0])
                     y_gt_list.append((y_batch.cpu())[i])
                 
@@ -271,15 +317,40 @@ if __name__ == "__main__":
     LEARNING_RATE = 0.00005
     WEIGHT_DECAY = 0.01
     EPOCH = 100
+    MOMENTUM = 0.5
     # dimension of each utterance: (n, 45)
     # n:number of time frames in the utterance
     torch.manual_seed(100)
+    np.random.seed(100)
     
     emo_num_dict = {'ang': 0, 'hap': 1, 'neu':2, 'sad': 3, 'sur': 4, 'fru': 5, 'xxx': 6, 'oth': 7, 'fea': 8, 'dis': 9, 'pad': 10}
     feat_pooled = joblib.load('./data/feat_preprocessing.pkl')
     
     # label
     emo_all_dict = joblib.load('./data/emo_all.pkl')
+    utt_logits_outputs_fold1 = joblib.load('./data/original_iaan/utt_logits_outputs_fold1.pkl')
+    utt_logits_outputs_fold2 = joblib.load('./data/original_iaan/utt_logits_outputs_fold2.pkl')
+    utt_logits_outputs_fold3 = joblib.load('./data/original_iaan/utt_logits_outputs_fold3.pkl')
+    utt_logits_outputs_fold4 = joblib.load('./data/original_iaan/utt_logits_outputs_fold4.pkl')
+    utt_logits_outputs_fold5 = joblib.load('./data/original_iaan/utt_logits_outputs_fold5.pkl')
+    
+    utt_hc_fold1 = joblib.load('./data/original_iaan/utt_hc_fold1.pkl')
+    utt_hc_fold2 = joblib.load('./data/original_iaan/utt_hc_fold2.pkl')
+    utt_hc_fold3 = joblib.load('./data/original_iaan/utt_hc_fold3.pkl')
+    utt_hc_fold4 = joblib.load('./data/original_iaan/utt_hc_fold4.pkl')
+    utt_hc_fold5 = joblib.load('./data/original_iaan/utt_hc_fold5.pkl')
+    
+    utt_hp_fold1 = joblib.load('./data/original_iaan/utt_hp_fold1.pkl')
+    utt_hp_fold2 = joblib.load('./data/original_iaan/utt_hp_fold2.pkl')
+    utt_hp_fold3 = joblib.load('./data/original_iaan/utt_hp_fold3.pkl')
+    utt_hp_fold4 = joblib.load('./data/original_iaan/utt_hp_fold4.pkl')
+    utt_hp_fold5 = joblib.load('./data/original_iaan/utt_hp_fold5.pkl')
+    
+    utt_hr_fold1 = joblib.load('./data/original_iaan/utt_hr_fold1.pkl')
+    utt_hr_fold2 = joblib.load('./data/original_iaan/utt_hr_fold2.pkl')
+    utt_hr_fold3 = joblib.load('./data/original_iaan/utt_hr_fold3.pkl')
+    utt_hr_fold4 = joblib.load('./data/original_iaan/utt_hr_fold4.pkl')
+    utt_hr_fold5 = joblib.load('./data/original_iaan/utt_hr_fold5.pkl')
     
     # dialog order
     #dialog_dict = joblib.load('./data/dialog_rearrange.pkl')
@@ -289,18 +360,50 @@ if __name__ == "__main__":
     val = ['Ses02', 'Ses03', 'Ses01', 'Ses05', 'Ses04']
     pred = []
     gt = []
-    pred_prob_dict = {}
+    pred_prob_dict_fold1 = {}
+    pred_prob_dict_fold2 = {}
+    pred_prob_dict_fold3 = {}
+    pred_prob_dict_fold4 = {}
+    pred_prob_dict_fold5 = {}
     
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     print(device)
     
     for test_, val_ in zip(test, val):
+        if val_ == 'Ses01':
+            emo_outputs = utt_logits_outputs_fold1
+            utt_hc = utt_hc_fold1
+            utt_hp = utt_hp_fold1
+            utt_hr = utt_hr_fold1
+        elif val_ == 'Ses02':
+            emo_outputs = utt_logits_outputs_fold2
+            utt_hc = utt_hc_fold2
+            utt_hp = utt_hp_fold2
+            utt_hr = utt_hr_fold2
+        elif val_ == 'Ses03':
+            emo_outputs = utt_logits_outputs_fold3
+            utt_hc = utt_hc_fold3
+            utt_hp = utt_hp_fold3
+            utt_hr = utt_hr_fold3
+        elif val_ == 'Ses04':
+            emo_outputs = utt_logits_outputs_fold4
+            utt_hc = utt_hc_fold4
+            utt_hp = utt_hp_fold4
+            utt_hr = utt_hr_fold4
+        else:
+            emo_outputs = utt_logits_outputs_fold5
+            utt_hc = utt_hc_fold5
+            utt_hp = utt_hp_fold5
+            utt_hr = utt_hr_fold5
+        utt_hp['pad'] = np.zeros(512)
+        utt_hr['pad'] = np.zeros(512)
         four_type_utt_list = [] # len:5531
         print("################{}################".format(test_))
         
         model = binaryClassification()
         model.to(device)
         optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE, weight_decay=WEIGHT_DECAY)
+        #optimizer = optim.SGD(model.parameters(), lr=LEARNING_RATE, weight_decay=WEIGHT_DECAY, momentum=MOMENTUM)
         
         
         # generate training data/ val data/ test data
@@ -310,33 +413,32 @@ if __name__ == "__main__":
         emo_test = pd.read_csv('./data/emo_test.csv')
         
         train_X, train_Y, val_X, val_Y, test_X, test_Y = [], [], [], [], [], []
-        test_utt_name, val_utt_name = [], []
+        train_utt_name, test_utt_name, val_utt_name = [], [], []
         
-        gen_train_val_test(emo_train, train_X, train_Y)
+        gen_train_val_test(emo_train, train_X, train_Y, train_utt_name)
         train_X = np.array(train_X)
         train_X = train_X.squeeze(1)
-        train_data = trainData(torch.FloatTensor(train_X), torch.FloatTensor(train_Y))
+        train_data = trainData(torch.FloatTensor(train_X), torch.FloatTensor(train_Y), train_utt_name)
         train_loader = DataLoader(dataset=train_data, batch_size=BATCH_SIZE, shuffle=True)
         
         gen_train_val_test(emo_val, val_X, val_Y, val_utt_name)
         val_X = np.array(val_X)
         val_X = val_X.squeeze(1)
         val_data = valData(torch.FloatTensor(val_X), torch.FloatTensor(val_Y), val_utt_name)
-        val_loader = DataLoader(dataset=val_data, batch_size=BATCH_SIZE)
+        val_loader = DataLoader(dataset=val_data, batch_size=BATCH_SIZE, shuffle=False)
         
         gen_train_val_test(emo_test, test_X, test_Y, test_utt_name)
         test_X = np.array(test_X)
         test_X = test_X.squeeze(1)
         test_data = testData(torch.FloatTensor(test_X), torch.FloatTensor(test_Y), test_utt_name)
-        test_loader = DataLoader(dataset=test_data, batch_size=BATCH_SIZE)
+        test_loader = DataLoader(dataset=test_data, batch_size=BATCH_SIZE, shuffle=False)
         
         counter = Counter(train_Y)
         criterion = nn.BCEWithLogitsLoss(pos_weight=torch.tensor(counter[0]/counter[1]).to(device))
         
         # training
         val_uar_list = []
-        max_val_uar = 0
-        min_val_loss = 10000000.
+        best_performance = -1000.
         best_epoch = 0
         for e in range(1, EPOCH+1, 1):
             model.train()
@@ -344,7 +446,7 @@ if __name__ == "__main__":
             epoch_loss_val = 0
             epoch_uar_train = 0
             
-            for X_batch, y_batch in train_loader:
+            for X_batch, y_batch, utt_name in train_loader:
                 X_batch, y_batch = X_batch.to(device), y_batch.to(device)
                 optimizer.zero_grad()
                 
@@ -365,20 +467,16 @@ if __name__ == "__main__":
             model.eval()
             model_pred_and_gt(y_pred_list_validation, y_gt_list_validation, val_loader, model)
             val_uar = recall_score(y_gt_list_validation, y_pred_list_validation, average='macro')*100
+            val_recall_1 = recall_score(y_gt_list_validation, y_pred_list_validation, average=None)[1]
+            val_precision_1 = precision_score(y_gt_list_validation, y_pred_list_validation, average=None)[1]
             val_uar_list.append(val_uar)
             
-            if val_uar > max_val_uar:
-                max_val_uar = val_uar
+            if val_precision_1 > best_performance or e == 1:
+                best_performance = val_precision_1
                 best_epoch = e
                 checkpoint = {'epoch': e, 'model_state_dict': model.state_dict(), 'optimizer_state_dict': optimizer.state_dict(), 'loss': loss}
                 torch.save(checkpoint, './model/mlp_pytorch_best_model.pth')
-            '''
-            if min_val_loss > epoch_loss_val or e == 1:
-                min_val_loss = epoch_loss_val
-                best_epoch = e
-                checkpoint = {'epoch': e, 'model_state_dict': model.state_dict(), 'optimizer_state_dict': optimizer.state_dict(), 'loss': loss}
-                torch.save(checkpoint, './model/mlp_pytorch_best_model.pth')
-            '''
+                
             print(f'Epoch {e+0:03}: | Train Loss: {epoch_loss_train/len(train_loader):.5f} | Train UAR: {epoch_uar_train/len(train_loader):.3f} | Val Loss: {epoch_loss_val/len(val_loader):.5f} | Val UAR: {val_uar:.2f}')
             print(confusion_matrix(y_gt_list_validation, y_pred_list_validation))
         print('The best epoch:', best_epoch)
@@ -390,11 +488,35 @@ if __name__ == "__main__":
         checkpoint = torch.load('./model/mlp_pytorch_best_model.pth')
         model.load_state_dict(checkpoint['model_state_dict'])
         model.eval()
-        model_pred_and_gt(pred, gt, test_loader, model, pred_prob_dict=pred_prob_dict)
-        
+        if val_ == 'Ses01':
+            model_pred_and_gt(None, None, train_loader, model, pred_prob_dict=pred_prob_dict_fold1)
+            model_pred_and_gt(None, None, val_loader, model, pred_prob_dict=pred_prob_dict_fold1)
+            model_pred_and_gt(pred, gt, test_loader, model, pred_prob_dict=pred_prob_dict_fold1)
+        elif val_ == 'Ses02':
+            model_pred_and_gt(None, None, train_loader, model, pred_prob_dict=pred_prob_dict_fold2)
+            model_pred_and_gt(None, None, val_loader, model, pred_prob_dict=pred_prob_dict_fold2)
+            model_pred_and_gt(pred, gt, test_loader, model, pred_prob_dict=pred_prob_dict_fold2)
+        elif val_ == 'Ses03':
+            model_pred_and_gt(None, None, train_loader, model, pred_prob_dict=pred_prob_dict_fold3)
+            model_pred_and_gt(None, None, val_loader, model, pred_prob_dict=pred_prob_dict_fold3)
+            model_pred_and_gt(pred, gt, test_loader, model, pred_prob_dict=pred_prob_dict_fold3)
+        elif val_ == 'Ses04':
+            model_pred_and_gt(None, None, train_loader, model, pred_prob_dict=pred_prob_dict_fold4)
+            model_pred_and_gt(None, None, val_loader, model, pred_prob_dict=pred_prob_dict_fold4)
+            model_pred_and_gt(pred, gt, test_loader, model, pred_prob_dict=pred_prob_dict_fold4)
+        elif val_ == 'Ses05':
+            model_pred_and_gt(None, None, train_loader, model, pred_prob_dict=pred_prob_dict_fold5)
+            model_pred_and_gt(None, None, val_loader, model, pred_prob_dict=pred_prob_dict_fold5)
+            model_pred_and_gt(pred, gt, test_loader, model, pred_prob_dict=pred_prob_dict_fold5)
+    print('## MODEL PERFORMANCE ##')
+    print(len(pred), len(gt))
     print('UAR:', round(recall_score(gt, pred, average='macro')*100, 2), '%')
-    #print('ACC:', round(accuracy_score(gt, pred)*100, 2), '%')
-    print('precision (predcit label 1):', round(precision_score(gt, pred)*100, 2), '%')
+    print('UAR 2 type:', recall_score(gt, pred, average=None))
+    print('precision 2 type:', precision_score(gt, pred, average=None))
     print(confusion_matrix(gt, pred))
     
-    joblib.dump(pred_prob_dict, './output/MLPPytorch_emo_shift_output.pkl')
+    joblib.dump(pred_prob_dict_fold1, './output/MLPPytorch_emo_shift_output_fold1.pkl')
+    joblib.dump(pred_prob_dict_fold2, './output/MLPPytorch_emo_shift_output_fold2.pkl')
+    joblib.dump(pred_prob_dict_fold3, './output/MLPPytorch_emo_shift_output_fold3.pkl')
+    joblib.dump(pred_prob_dict_fold4, './output/MLPPytorch_emo_shift_output_fold4.pkl')
+    joblib.dump(pred_prob_dict_fold5, './output/MLPPytorch_emo_shift_output_fold5.pkl')

@@ -56,7 +56,7 @@ def generate_interaction_sample(index_words, seq_dict, emo_dict, case_num):
                 target_.append('pad')
                 target_label.append('pad')
                 target_dist.append('None')
-                self_emo_shift.append(1)
+                self_emo_shift.append(0)
                 self_time_dur.append('None')
 
             if len(pp) != 0:

@@ -11,6 +11,23 @@ from collections import Counter
 from imblearn.over_sampling import SMOTE, RandomOverSampler 
 from imblearn.under_sampling import ClusterCentroids
 from imblearn.combine import SMOTETomek, SMOTEENN
+from sklearn.metrics.pairwise import cosine_similarity
+import scipy.stats
+
+def softmax(x):
+    f_x = np.exp(x) / np.sum(np.exp(x))
+    return f_x
+
+def cal_cosine_similarity(center_logits, target_logits): # 0~1
+    return cosine_similarity(center_logits.reshape(1, 4), target_logits.reshape(1, 4))[0][0]
+
+def cal_kl_divergence(center_logits, target_logits): # 0~inf
+    center_probs = softmax(center_logits)
+    target_probs = softmax(target_logits)
+    return scipy.stats.entropy(center_probs, target_probs) 
+
+def cal_earth_mover_dist(center_logits, target_logits): # 0~inf
+    return scipy.stats.wasserstein_distance(center_logits, target_logits)
 
 def generate_interaction_sample(index_words, seq_dict, emo_dict, val=False):
     """ 
@@ -131,7 +148,16 @@ def gen_train_test_pair(data_frame, X, Y, test_utt_name=None):
         #oppo_utt_emo = emo_num_dict[row[5]]
         self_emo_shift = row[-1]
         
-        X[-1].append(np.concatenate((center_utt_feat.flatten(), target_utt_feat.flatten(), oppo_utt_feat.flatten())))
+        #X[-1].append(np.concatenate((center_utt_feat.flatten(), target_utt_feat.flatten(), oppo_utt_feat.flatten())))
+        if target_utt_name != 'pad':
+            cos_sim = cal_cosine_similarity(center_logits=emo_outputs[center_utt_name], target_logits=emo_outputs[target_utt_name])
+            kl_div = cal_kl_divergence(center_logits=emo_outputs[center_utt_name], target_logits=emo_outputs[target_utt_name])
+            earth_mover_dist = cal_earth_mover_dist(center_logits=emo_outputs[center_utt_name], target_logits=emo_outputs[target_utt_name])
+        else:
+            cos_sim = 1
+            kl_div = 0
+            earth_mover_dist = 0
+        X[-1].append(np.concatenate((np.array([cos_sim, kl_div, earth_mover_dist]), center_utt_feat.flatten(), target_utt_feat.flatten(), oppo_utt_feat.flatten())))
         if center_utt_name in four_type_utt_list:
             Y.append(self_emo_shift)
 
@@ -166,6 +192,8 @@ if __name__ == "__main__":
     
     # label
     emo_all_dict = joblib.load('./data/emo_all.pkl')
+    
+    emo_outputs = joblib.load('./data/dag_outputs_4_all_fold_single_rearrange.pkl')
     
     # dialog order
     #dialog_dict = joblib.load('./data/dialog_rearrange.pkl')
