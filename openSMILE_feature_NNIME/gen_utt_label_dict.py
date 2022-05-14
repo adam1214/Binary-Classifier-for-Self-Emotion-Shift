@@ -191,11 +191,11 @@ if __name__ == "__main__":
     feat_pooled = joblib.load('./data/feat_preprocessing.pkl')
     
     # label
-    emo_all_dict = joblib.load('./data/emo_all.pkl')
+    emo_all_dict = joblib.load('./data/speech_only/emo_all_speech_only.pkl')
     
     # dialog order
     #dialog_dict = joblib.load('./data/dialog_rearrange.pkl')
-    dialog_dict = joblib.load('./data/dialogs_4emo.pkl')
+    dialog_dict = joblib.load('./data/speech_only/dialogs_edit_speech_only.pkl')
     
     val = ['Ses01', 'Ses02', 'Ses03', 'Ses04', 'Ses05']
     utt_emo_shift_dict = {}
@@ -211,8 +211,8 @@ if __name__ == "__main__":
         emo_train = pd.read_csv('./data/emo_train.csv')
         emo_test = pd.read_csv('./data/emo_test.csv')
         break
-    joblib.dump(utt_emo_shift_dict, './data/4emo_shift_all.pkl')
-    '''
+    joblib.dump(utt_emo_shift_dict, './data/speech_only/4emo_shift_all_speech_only.pkl')
+    
     for val_ in val:
         train_X, train_Y = [], []
         test_utt_name = []
@@ -222,9 +222,9 @@ if __name__ == "__main__":
         emo_train = pd.read_csv('./data/emo_train.csv')
         gen_train_val_test(emo_train, train_X, train_Y)
         counter = Counter(train_Y)
-        utt_emo_shift_dict = joblib.load('./data/4emo_shift_all_rearrange.pkl')
+        utt_emo_shift_dict = joblib.load('./data/speech_only/4emo_shift_all_speech_only.pkl')
         utt_emo_shift_dict['fold'+val_[-1]+'_0'] = counter[0]
         utt_emo_shift_dict['fold'+val_[-1]+'_1'] = counter[1]
-        joblib.dump(utt_emo_shift_dict, './data/4emo_shift_all_rearrange.pkl')
-    '''
+        joblib.dump(utt_emo_shift_dict, './data/speech_only/4emo_shift_all_speech_only.pkl')
+    
         
